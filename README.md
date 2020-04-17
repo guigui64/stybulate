@@ -6,7 +6,7 @@ Inspired by the PyPi package <https://pypi.org/project/tabulate/>.
 [![Build status](https://github.com/guigui64/stybulate/workflows/CI/badge.svg)](https://github.com/guigui64/stybulate/actions)
 [![Crates.io](https://meritbadge.herokuapp.com/stybulate)](https://crates.io/crates/stybulate)
 [![Rust](https://img.shields.io/badge/rust-1.38.0%2B-blue.svg?maxAge=3600)](https://github.com/guigui64/stybulate)
-[![Docs.rs](https://img.shields.io/badge/docs.rs-latest-orange)](https://docs.rs/stybulate)
+[![Docs.rs](https://docs.rs/stybulate/badge.svg)](https://docs.rs/stybulate)
 [![License](https://img.shields.io/crates/l/stybulate)](https://github.com/guigui64/stybulate/blob/master/LICENSE-MIT)
 
 ### Example
