@@ -2,8 +2,9 @@
 //! This library creates tables in ASCII with styled borders
 //!
 //! # References
-//! It was inspired from the Python package <https://pypi.org/project/tabulate/>
+//! It was inspired by the Python package <https://pypi.org/project/tabulate/>
 //!
+//! # Examples
 //! ```
 //! use stybulate::{tabulate, Style, Cell};
 //! let headers = vec!["strings", "numbers"];
@@ -114,6 +115,8 @@ pub fn tabulate(style: Style, contents: Vec<Vec<Cell>>, headers: Vec<&str>) -> S
 }
 
 /// Tabulate
+/// # Panics
+/// Panics if str_align is equal to `Decimal`.
 pub fn tabulate_with_align(
     style: Style,
     contents: Vec<Vec<Cell>>,
