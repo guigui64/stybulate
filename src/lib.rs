@@ -132,7 +132,7 @@ pub fn tabulate_with_align(
     );
     // column specs = [0]: true if only made of numbers & [1]: digits offset
     let mut col_spec = vec![(false, 0); col_nb];
-    for col in 0..col_nb {
+    for (col, spec) in col_spec.iter_mut().enumerate().take(col_nb) {
         let mut max = 0;
         let mut all = true;
         for row in contents.iter() {
@@ -144,14 +144,14 @@ pub fn tabulate_with_align(
                 }
             }
         }
-        col_spec[col] = (all, max);
+        *spec = (all, max);
     }
     // max width of the content of each column
     let mut col_width = vec![0; col_nb];
     for col in 0..col_nb {
         let mut max = 0;
         if let Some(h) = headers.get(col) {
-            max = *h.split("\n").map(str::len).max().get_or_insert(0) + MIN_PADDING;
+            max = *h.split('\n').map(str::len).max().get_or_insert(0) + MIN_PADDING;
         }
         for row in contents.iter() {
             if let Some(c) = row.get(col) {
@@ -159,7 +159,7 @@ pub fn tabulate_with_align(
                 {
                     c.to_str_with_digits(col_spec[col].1).len()
                 } else {
-                    *c.to_str().split("\n").map(str::len).max().get_or_insert(0)
+                    *c.to_str().split('\n').map(str::len).max().get_or_insert(0)
                 };
                 max = cmp::max(width, max);
             }
@@ -168,7 +168,7 @@ pub fn tabulate_with_align(
     }
     // Build the lines
     let mut lines = vec![];
-    let hasheader = headers.len() > 0;
+    let hasheader = !headers.is_empty();
     // lineabove
     if !(hasheader && fmt.hidelineaboveifheader) {
         if let Some(lineabove) = fmt.lineabove {
@@ -177,35 +177,8 @@ pub fn tabulate_with_align(
     }
     if hasheader {
         // headerrow
-        if headers.iter().any(|h| h.contains("\n")) {
-            // handle multi line headers
-            let mut headers: Vec<String> = headers.iter().map(|h| h.to_string()).collect();
-            loop {
-                let mut rest = vec![];
-                for c in headers.iter_mut() {
-                    if let Some(idx) = c.find("\n") {
-                        let next = c.split_off(idx);
-                        rest.push(String::from(&next[1..]));
-                    } else {
-                        rest.push(String::from(""));
-                    }
-                }
-                lines.push(create_data_line(
-                    &fmt.headerrow,
-                    col_nb,
-                    &col_width,
-                    &col_spec,
-                    &num_align,
-                    &str_align,
-                    &headers.iter().map(|s| &s as &str).collect(),
-                ));
-                if rest.iter().all(|s| *s == String::from("")) {
-                    break;
-                } else {
-                    headers = rest;
-                }
-            }
-        } else {
+        let headers = line_to_multi(headers.iter().map(|s| (*s).to_string()).collect());
+        for headerline in headers.iter() {
             lines.push(create_data_line(
                 &fmt.headerrow,
                 col_nb,
@@ -213,7 +186,7 @@ pub fn tabulate_with_align(
                 &col_spec,
                 &num_align,
                 &str_align,
-                &headers,
+                &headerline.iter().map(|s| &s as &str).collect::<Vec<&str>>()[..],
             ));
         }
         // linebelowheader
@@ -232,39 +205,14 @@ pub fn tabulate_with_align(
         // datarow
         {
             // convert cells to string
-            let mut content: Vec<String> = content
-                .iter()
-                .enumerate()
-                .map(|(col, cell)| cell.to_str_with_digits(col_spec[col].1))
-                .collect();
-            if content.iter().any(|c| c.contains("\n")) {
-                // handle multi line cells
-                loop {
-                    let mut rest = vec![];
-                    for c in content.iter_mut() {
-                        if let Some(idx) = c.find("\n") {
-                            let next = c.split_off(idx);
-                            rest.push(String::from(&next[1..]));
-                        } else {
-                            rest.push(String::from(""));
-                        }
-                    }
-                    lines.push(create_data_line(
-                        &fmt.datarow,
-                        col_nb,
-                        &col_width,
-                        &col_spec,
-                        &num_align,
-                        &str_align,
-                        &content.iter().map(|s| &s as &str).collect(),
-                    ));
-                    if rest.iter().all(|s| *s == String::from("")) {
-                        break;
-                    } else {
-                        content = rest;
-                    }
-                }
-            } else {
+            let content = line_to_multi(
+                content
+                    .iter()
+                    .enumerate()
+                    .map(|(col, cell)| cell.to_str_with_digits(col_spec[col].1))
+                    .collect(),
+            );
+            for contentline in content.iter() {
                 lines.push(create_data_line(
                     &fmt.datarow,
                     col_nb,
@@ -272,7 +220,10 @@ pub fn tabulate_with_align(
                     &col_spec,
                     &num_align,
                     &str_align,
-                    &content.iter().map(|s| &s as &str).collect(),
+                    &contentline
+                        .iter()
+                        .map(|s| &s as &str)
+                        .collect::<Vec<&str>>()[..],
                 ));
             }
         }
@@ -310,7 +261,7 @@ impl Style {
             Self::Simple => TableFormat {
                 lineabove: Some(basicline.clone()),
                 linebelowheader: Some(basicline.clone()),
-                linebelow: Some(basicline.clone()),
+                linebelow: Some(basicline),
                 hidelineaboveifheader: true,
                 hidelinebelowifheader: true,
                 ..emptyformat
@@ -321,7 +272,7 @@ impl Style {
                     lineabove: Some(line.clone()),
                     linebelowheader: Some(line),
                     headerrow: piperow.clone(),
-                    datarow: piperow.clone(),
+                    datarow: piperow,
                     padding: 1,
                     hidelineaboveifheader: true,
                     ..emptyformat
@@ -335,7 +286,7 @@ impl Style {
                     linebetweenrows: Some(line.clone()),
                     linebelow: Some(line),
                     headerrow: piperow.clone(),
-                    datarow: piperow.clone(),
+                    datarow: piperow,
                     padding: 1,
                     ..emptyformat
                 }
@@ -377,7 +328,7 @@ impl Cell<'_> {
 
     fn to_str(&self) -> String {
         match self {
-            Self::Text(s) => s.to_string(),
+            Self::Text(s) => (*s).to_string(),
             Self::Int(i) => i.to_string(),
             Self::Float(f) => f.to_string(),
         }
@@ -385,7 +336,7 @@ impl Cell<'_> {
 
     fn to_str_with_digits(&self, digits: usize) -> String {
         match self {
-            Self::Text(s) => s.to_string(),
+            Self::Text(s) => (*s).to_string(),
             Self::Int(i) => format!("{:.prec$}", *i as f64, prec = digits),
             Self::Float(f) => format!("{:.prec$}", f, prec = digits),
         }
@@ -405,7 +356,7 @@ impl Cell<'_> {
     }
 }
 
-fn create_line(line: &Line, col_width: &Vec<usize>) -> String {
+fn create_line(line: &Line, col_width: &[usize]) -> String {
     (line.begin.clone()
         + &col_width
             .iter()
@@ -420,11 +371,11 @@ fn create_line(line: &Line, col_width: &Vec<usize>) -> String {
 fn create_data_line(
     row: &DataRow,
     col_nb: usize,
-    col_width: &Vec<usize>,
-    col_spec: &Vec<(bool, usize)>,
+    col_width: &[usize],
+    col_spec: &[(bool, usize)],
     num_align: &Align,
     str_align: &Align,
-    content: &Vec<&str>,
+    content: &[&str],
 ) -> String {
     let re = regex::Regex::new(r"\.0+$").unwrap();
     (row.begin.clone()
@@ -463,6 +414,34 @@ fn create_data_line(
         + &row.end)
         .trim_end()
         .to_string()
+}
+
+fn line_to_multi(mut line: Vec<String>) -> Vec<Vec<String>> {
+    let mut multi = vec![];
+
+    if line.iter().any(|s| s.contains('\n')) {
+        loop {
+            let mut rest = vec![];
+            for c in line.iter_mut() {
+                if let Some(idx) = c.find('\n') {
+                    let next = c.split_off(idx);
+                    rest.push(String::from(&next[1..]));
+                } else {
+                    rest.push(String::from(""));
+                }
+            }
+            multi.push(line);
+            if rest.iter().all(|s| s == &String::from("")) {
+                break;
+            } else {
+                line = rest;
+            }
+        }
+    } else {
+        multi.push(line);
+    }
+
+    multi
 }
 
 #[derive(Clone)]
