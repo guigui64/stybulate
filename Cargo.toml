@@ -11,8 +11,3 @@ homepage = "https://github.com/guigui64/stybulate"
 description = "Tabulate with Style"
 categories = ["command-line-interface"]
 exclude = ["/.github/", "/scripts/"]
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-regex = "1"
