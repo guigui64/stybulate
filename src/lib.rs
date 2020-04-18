@@ -27,6 +27,9 @@
 
 use std::cmp;
 
+use regex::Regex;
+use unicode_width::UnicodeWidthStr;
+
 // constants
 const MIN_PADDING: usize = 2;
 
@@ -154,7 +157,12 @@ pub fn tabulate_with_align(
     for col in 0..col_nb {
         let mut max = 0;
         if let Some(h) = headers.get(col) {
-            max = *h.split('\n').map(str::len).max().get_or_insert(0) + MIN_PADDING;
+            max = *h
+                .split('\n')
+                .map(|s| UnicodeWidthStr::width(s))
+                .max()
+                .get_or_insert(0)
+                + MIN_PADDING;
         }
         for row in contents.iter() {
             if let Some(c) = row.get(col) {
@@ -162,7 +170,11 @@ pub fn tabulate_with_align(
                 {
                     c.to_str_with_digits(col_spec[col].1).len()
                 } else {
-                    *c.to_str().split('\n').map(str::len).max().get_or_insert(0)
+                    *c.to_str()
+                        .split('\n')
+                        .map(|s| UnicodeWidthStr::width(s))
+                        .max()
+                        .get_or_insert(0)
                 };
                 max = cmp::max(width, max);
             }
@@ -380,7 +392,7 @@ fn create_data_line(
     str_align: &Align,
     content: &[&str],
 ) -> String {
-    let re = regex::Regex::new(r"\.0+$").unwrap();
+    let re = Regex::new(r"\.0+$").unwrap();
     (row.begin.clone()
         + &(0..col_nb)
             .map(|col| {
@@ -398,6 +410,7 @@ fn create_data_line(
                     // strings only
                     &str_align
                 };
+                let width = width - (word.len() - UnicodeWidthStr::width(*word));
                 match *align {
                     Align::Right => format!("{:>width$}", word, width = width),
                     Align::Left => format!("{:<width$}", word, width = width),
@@ -842,21 +855,26 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn grid_wide_characters() {
         //Output: grid with wide characters in headers
-        let tested_input = TestedInput {
-            headers: vec!["strings", "配列"],
-            ..TestedInput::default()
-        };
+        let unistr = "配列";
+        let headers = vec!["strings", unistr];
+        let contents = vec![
+            vec![
+                Cell::Text("Ответ на главный вопрос жизни, вселенной и всего такого"),
+                Cell::Int(42),
+            ],
+            vec![Cell::Text("pi"), Cell::Float(3.1415)],
+        ];
+        let tested_input = TestedInput { headers, contents };
         let expected = vec![
-            "+-----------+----------+",
-            "| strings   |     配列 |",
-            "+===========+==========+",
-            "| spam      |  41.9999 |",
-            "+-----------+----------+",
-            "| eggs      | 451      |",
-            "+-----------+----------+",
+            "+---------------------------------------------------------+---------+",
+            "| strings                                                 |    配列 |",
+            "+=========================================================+=========+",
+            "| Ответ на главный вопрос жизни, вселенной и всего такого | 42      |",
+            "+---------------------------------------------------------+---------+",
+            "| pi                                                      |  3.1415 |",
+            "+---------------------------------------------------------+---------+",
         ]
         .join("\n");
         let result = tabulate(Style::Grid, tested_input.contents, tested_input.headers);
