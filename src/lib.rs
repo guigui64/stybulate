@@ -27,7 +27,6 @@
 
 use std::cmp;
 
-use regex::Regex;
 use unicode_width::UnicodeWidthStr;
 
 // constants
@@ -421,7 +420,6 @@ fn create_data_line(
     str_align: &Align,
     content: &[&str],
 ) -> String {
-    let re = Regex::new(r"\.0+$").unwrap();
     (row.begin.clone()
         + &(0..col_nb)
             .map(|col| {
@@ -445,12 +443,13 @@ fn create_data_line(
                     Align::Left => format!("{:<width$}", word, width = width),
                     Align::Center => format!("{:^width$}", word, width = width),
                     Align::Decimal => {
-                        let out = format!("{:>width$}", word, width = width);
-                        if let Some(mat) = re.find(&out) {
-                            out.replace(&out[mat.start()..], &" ".repeat(mat.end() - mat.start()))
-                        } else {
-                            out
+                        let mut out = format!("{:>width$}", word, width = width);
+                        if let Some(dot) = out.rfind('.') {
+                            if out[(dot + 1)..].bytes().all(|c| c == b'0') {
+                                out.replace_range(dot.., &" ".repeat(out.len() - dot));
+                            }
                         }
+                        out
                     }
                 }
             })
