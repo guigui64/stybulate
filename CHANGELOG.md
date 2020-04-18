@@ -2,7 +2,9 @@
 
 ## next
 
-* Handle unicode strings (in width calculus) #1
+* Regex dependency removed #6
+* New styles added (FancyGithub and FancyPresto) #7
+* Handle unicode strings (in width calculus) #9
 
 ## 0.1.0
 
