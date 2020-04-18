@@ -86,6 +86,20 @@ pub enum Style {
     /// eggs   |   451
     /// ```
     Presto,
+    /// ```text
+    /// │ item   │   qty │
+    /// ├────────┼───────┤
+    /// │ spam   │    42 │
+    /// │ eggs   │   451 │
+    /// ```
+    FancyGithub,
+    /// ```text
+    /// item   │   qty
+    /// ───────┼──────
+    /// spam   │    42
+    /// eggs   │   451
+    /// ```
+    FancyPresto,
 }
 
 /// The column alignments
@@ -271,6 +285,10 @@ impl Style {
         };
         let basicline = Line::new("", "-", "  ", "");
         let piperow = DataRow::new("| ", " | ", " |");
+        let single_line = Line::new("", "─", "─┼─", "");
+        let single_line_with_ends = Line::new("├─", "─", "─┼─", "─┤");
+        let row_line = DataRow::new("", " │ ", "");
+        let row_line_with_ends = DataRow::new("│ ", " │ ", " │");
         match self {
             Self::Plain => emptyformat,
             Self::Simple => TableFormat {
@@ -306,19 +324,16 @@ impl Style {
                     ..emptyformat
                 }
             }
-            Self::Fancy => {
-                let row = DataRow::new("│ ", " │ ", " │");
-                TableFormat {
-                    lineabove: Some(Line::new("╒═", "═", "═╤═", "═╕")),
-                    linebelowheader: Some(Line::new("╞═", "═", "═╪═", "═╡")),
-                    linebetweenrows: Some(Line::new("├─", "─", "─┼─", "─┤")),
-                    linebelow: Some(Line::new("╘═", "═", "═╧═", "═╛")),
-                    headerrow: row.clone(),
-                    datarow: row,
-                    padding: 1,
-                    ..emptyformat
-                }
-            }
+            Self::Fancy => TableFormat {
+                lineabove: Some(Line::new("╒═", "═", "═╤═", "═╕")),
+                linebelowheader: Some(Line::new("╞═", "═", "═╪═", "═╡")),
+                linebetweenrows: Some(single_line_with_ends),
+                linebelow: Some(Line::new("╘═", "═", "═╧═", "═╛")),
+                headerrow: row_line_with_ends.clone(),
+                datarow: row_line_with_ends,
+                padding: 1,
+                ..emptyformat
+            },
             Self::Presto => {
                 let row = DataRow::new(" ", " | ", " ");
                 TableFormat {
@@ -329,6 +344,20 @@ impl Style {
                     ..emptyformat
                 }
             }
+            Self::FancyGithub => TableFormat {
+                linebelowheader: Some(single_line_with_ends),
+                headerrow: row_line_with_ends.clone(),
+                datarow: row_line_with_ends,
+                padding: 1,
+                ..emptyformat
+            },
+            Self::FancyPresto => TableFormat {
+                linebelowheader: Some(single_line),
+                headerrow: row_line.clone(),
+                datarow: row_line,
+                padding: 1,
+                ..emptyformat
+            },
         }
     }
 }
@@ -1255,6 +1284,260 @@ mod tests {
         ]
         .join("\n");
         let result = tabulate(Style::Presto, tested_input.contents, tested_input.headers);
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn fancygithub_grid() {
+        let tested_input = TestedInput::default();
+        let expected = vec![
+            "│ strings   │   numbers │",
+            "├───────────┼───────────┤",
+            "│ spam      │   41.9999 │",
+            "│ eggs      │  451      │",
+        ]
+        .join("\n");
+        let result = tabulate(
+            Style::FancyGithub,
+            tested_input.contents,
+            tested_input.headers,
+        );
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn fancygithub_grid_headerless() {
+        let tested_input = TestedInput::default();
+        let expected = vec!["│ spam │  41.9999 │", "│ eggs │ 451      │"].join("\n");
+        let result = tabulate(Style::FancyGithub, tested_input.contents, vec![]);
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn fancygithub_grid_multiline_headerless() {
+        let tested_input = TestedInput::with_contents(vec![
+            vec![Cell::Text("foo bar\nbaz\nbau"), Cell::Text("hello")],
+            vec![Cell::Text(""), Cell::Text("multiline\nworld")],
+        ]);
+        let expected = vec![
+            "│ foo bar │   hello   │",
+            "│   baz   │           │",
+            "│   bau   │           │",
+            "│         │ multiline │",
+            "│         │   world   │",
+        ]
+        .join("\n");
+        let result = tabulate_with_align(
+            Style::FancyGithub,
+            tested_input.contents,
+            tested_input.headers,
+            Align::Center,
+            Align::Right,
+        );
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn fancygithub_grid_multiline() {
+        let tested_input = TestedInput::new(
+            vec![vec![Cell::Int(2), Cell::Text("foo\nbar")]],
+            vec!["more\nspam eggs", "more spam\n& eggs"],
+        );
+        let expected = vec![
+            "│        more │ more spam   │",
+            "│   spam eggs │ & eggs      │",
+            "├─────────────┼─────────────┤",
+            "│           2 │ foo         │",
+            "│             │ bar         │",
+        ]
+        .join("\n");
+        let result = tabulate(
+            Style::FancyGithub,
+            tested_input.contents,
+            tested_input.headers,
+        );
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn fancygithub_grid_multiline_with_empty_cells() {
+        let tested_input = TestedInput::new(
+            vec![
+                vec![Cell::Int(1), Cell::Text(""), Cell::Text("")],
+                vec![
+                    Cell::Int(2),
+                    Cell::Text("very long data"),
+                    Cell::Text("fold\nthis"),
+                ],
+            ],
+            vec!["hdr", "data", "fold"],
+        );
+        let expected = vec![
+            "│   hdr │ data           │ fold   │",
+            "├───────┼────────────────┼────────┤",
+            "│     1 │                │        │",
+            "│     2 │ very long data │ fold   │",
+            "│       │                │ this   │",
+        ]
+        .join("\n");
+        let result = tabulate(
+            Style::FancyGithub,
+            tested_input.contents,
+            tested_input.headers,
+        );
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn fancygithub_grid_multiline_with_empty_cells_headerless() {
+        let tested_input = TestedInput::with_contents(vec![
+            vec![Cell::Int(0), Cell::Text(""), Cell::Text("")],
+            vec![Cell::Int(1), Cell::Text(""), Cell::Text("")],
+            vec![
+                Cell::Int(2),
+                Cell::Text("very long data"),
+                Cell::Text("fold\nthis"),
+            ],
+        ]);
+        let expected = vec![
+            "│ 0 │                │      │",
+            "│ 1 │                │      │",
+            "│ 2 │ very long data │ fold │",
+            "│   │                │ this │",
+        ]
+        .join("\n");
+        let result = tabulate(
+            Style::FancyGithub,
+            tested_input.contents,
+            tested_input.headers,
+        );
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn fancypresto_grid() {
+        let tested_input = TestedInput::default();
+        let expected = vec![
+            "strings   │   numbers",
+            "──────────┼──────────",
+            "spam      │   41.9999",
+            "eggs      │  451",
+        ]
+        .join("\n");
+        let result = tabulate(
+            Style::FancyPresto,
+            tested_input.contents,
+            tested_input.headers,
+        );
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn fancypresto_grid_headerless() {
+        let tested_input = TestedInput::default();
+        let expected = vec!["spam │  41.9999", "eggs │ 451"].join("\n");
+        let result = tabulate(Style::FancyPresto, tested_input.contents, vec![]);
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn fancypresto_grid_multiline_headerless() {
+        let tested_input = TestedInput::with_contents(vec![
+            vec![Cell::Text("foo bar\nbaz\nbau"), Cell::Text("hello")],
+            vec![Cell::Text(""), Cell::Text("multiline\nworld")],
+        ]);
+        let expected = vec![
+            "foo bar │   hello",
+            "  baz   │",
+            "  bau   │",
+            "        │ multiline",
+            "        │   world",
+        ]
+        .join("\n");
+        let result = tabulate_with_align(
+            Style::FancyPresto,
+            tested_input.contents,
+            tested_input.headers,
+            Align::Center,
+            Align::Right,
+        );
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn fancypresto_grid_multiline() {
+        let tested_input = TestedInput::new(
+            vec![vec![Cell::Int(2), Cell::Text("foo\nbar")]],
+            vec!["more\nspam eggs", "more spam\n& eggs"],
+        );
+        let expected = vec![
+            "       more │ more spam",
+            "  spam eggs │ & eggs",
+            "────────────┼────────────",
+            "          2 │ foo",
+            "            │ bar",
+        ]
+        .join("\n");
+        let result = tabulate(
+            Style::FancyPresto,
+            tested_input.contents,
+            tested_input.headers,
+        );
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn fancypresto_grid_multiline_with_empty_cells() {
+        let tested_input = TestedInput::new(
+            vec![
+                vec![Cell::Int(1), Cell::Text(""), Cell::Text("")],
+                vec![
+                    Cell::Int(2),
+                    Cell::Text("very long data"),
+                    Cell::Text("fold\nthis"),
+                ],
+            ],
+            vec!["hdr", "data", "fold"],
+        );
+        let expected = vec![
+            "  hdr │ data           │ fold",
+            "──────┼────────────────┼───────",
+            "    1 │                │",
+            "    2 │ very long data │ fold",
+            "      │                │ this",
+        ]
+        .join("\n");
+        let result = tabulate(
+            Style::FancyPresto,
+            tested_input.contents,
+            tested_input.headers,
+        );
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn fancypresto_grid_multiline_with_empty_cells_headerless() {
+        let tested_input = TestedInput::with_contents(vec![
+            vec![Cell::Int(0), Cell::Text(""), Cell::Text("")],
+            vec![Cell::Int(1), Cell::Text(""), Cell::Text("")],
+            vec![
+                Cell::Int(2),
+                Cell::Text("very long data"),
+                Cell::Text("fold\nthis"),
+            ],
+        ]);
+        let expected = vec![
+            "0 │                │",
+            "1 │                │",
+            "2 │ very long data │ fold",
+            "  │                │ this",
+        ]
+        .join("\n");
+        let result = tabulate(
+            Style::FancyPresto,
+            tested_input.contents,
+            tested_input.headers,
+        );
         assert_eq!(expected, result);
     }
 }
