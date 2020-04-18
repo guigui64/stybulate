@@ -16,3 +16,4 @@ exclude = ["/.github/", "/scripts/"]
 
 [dependencies]
 regex = "1"
+unicode-width = "0.1.7"
