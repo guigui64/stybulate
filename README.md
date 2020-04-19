@@ -35,10 +35,6 @@ assert_eq!(expected, table);
 
 See [here](CHANGELOG.md)
 
-### Contributors
-
-Guillaume Comte
-
 ### License
 
 This project is licensed under either of
