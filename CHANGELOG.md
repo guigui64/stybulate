@@ -1,6 +1,6 @@
 # Change Log
 
-## next
+## 0.1.1
 
 * Regex dependency removed #6
 * New styles added (FancyGithub and FancyPresto) #7
