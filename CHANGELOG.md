@@ -1,12 +1,22 @@
-# Change Log
+# Changelog
 
-## 0.1.1
+All notable changes to this project will be documented in this file.
 
-* Regex dependency removed #6
-* New styles added (FancyGithub and FancyPresto) #7
-* Handle unicode strings (in width calculus) #9
-* colored text supported #10
+This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## 0.1.0
+## [next]
+
+## [0.1.1] - 2020-04-20
+
+* Regex dependency removed
+* New styles added (FancyGithub and FancyPresto)
+* Handle unicode strings (in width calculus)
+* colored text supported
+
+## [0.1.0] - 2020-04-17
 
 * First release
+
+[next]: https://github.com/guigui64/stybulate/compare/0.1.1...HEAD
+[0.1.1]: https://github.com/guigui64/stybulate/compare/0.1.0...0.1.1
+[0.1.0]: https://github.com/guigui64/stybulate/releases/tag/0.1.0

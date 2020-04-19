@@ -7,8 +7,17 @@ current_version=${current_version//\"/}
 if [[ $# == 0 ]]; then
     echo "Current version is $current_version"
     echo "Use $0 NEW_VERSION to change it"
+    exit
 fi
 
 new_version=$1
-sed -i "s/## next/## $new_version/" CHANGELOG.md
+
+# CHANGELOG
+sed -i \
+    -e "/^## \[next\]/a \\\n## [$new_version] - $(date +%Y-%m-%d)" \
+    -e "/^\[next\]:/s/${current_version//./\\.}/$new_version/" \
+    -e "/^\[next\]:/a [$new_version]: https://github.com/guigui64/stybulate/compare/$current_version...$new_version" \
+    CHANGELOG.md
+
+# Cargo
 sed -i "/version = /s/${current_version//./\\.}/$new_version/" Cargo.toml
