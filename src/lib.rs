@@ -172,7 +172,8 @@ pub fn tabulate_with_align(
         if let Some(h) = headers.get(col) {
             max = *h
                 .split('\n')
-                .map(|s| UnicodeWidthStr::width(s))
+                .map(strip)
+                .map(|s| UnicodeWidthStr::width(&s as &str))
                 .max()
                 .get_or_insert(0)
                 + MIN_PADDING;
@@ -185,7 +186,8 @@ pub fn tabulate_with_align(
                 } else {
                     *c.to_str()
                         .split('\n')
-                        .map(|s| UnicodeWidthStr::width(s))
+                        .map(strip)
+                        .map(|s| UnicodeWidthStr::width(&s as &str))
                         .max()
                         .get_or_insert(0)
                 };
@@ -437,13 +439,15 @@ fn create_data_line(
                     // strings only
                     &str_align
                 };
-                let width = width - (word.len() - UnicodeWidthStr::width(*word));
-                match *align {
-                    Align::Right => format!("{:>width$}", word, width = width),
-                    Align::Left => format!("{:<width$}", word, width = width),
-                    Align::Center => format!("{:^width$}", word, width = width),
+                let stripped_word = strip(word);
+                let width =
+                    width - (stripped_word.len() - UnicodeWidthStr::width(&stripped_word as &str));
+                let formatted = match *align {
+                    Align::Right => format!("{:>width$}", stripped_word, width = width),
+                    Align::Left => format!("{:<width$}", stripped_word, width = width),
+                    Align::Center => format!("{:^width$}", stripped_word, width = width),
                     Align::Decimal => {
-                        let mut out = format!("{:>width$}", word, width = width);
+                        let mut out = format!("{:>width$}", stripped_word, width = width);
                         if let Some(dot) = out.rfind('.') {
                             if out[(dot + 1)..].bytes().all(|c| c == b'0') {
                                 out.replace_range(dot.., &" ".repeat(out.len() - dot));
@@ -451,6 +455,11 @@ fn create_data_line(
                         }
                         out
                     }
+                };
+                if &stripped_word != word {
+                    formatted.replace(&stripped_word, word)
+                } else {
+                    formatted
                 }
             })
             .collect::<Vec<String>>()
@@ -486,6 +495,10 @@ fn line_to_multi(mut line: Vec<String>) -> Vec<Vec<String>> {
     }
 
     multi
+}
+
+fn strip(s: &str) -> String {
+    String::from(std::str::from_utf8(&strip_ansi_escapes::strip(s).unwrap()).unwrap())
 }
 
 #[derive(Clone)]
@@ -789,6 +802,25 @@ mod tests {
         let expected = vec![
             "       more  more spam",
             "  spam eggs  & eggs",
+            "-----------  -----------",
+            "          2  foo",
+            "             bar",
+        ]
+        .join("\n");
+        let result = tabulate(Style::Simple, tested_input.contents, tested_input.headers);
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn simple_multiline_ansi() {
+        //Output: simple with multiline headers and colors (ansi escape)
+        let tested_input = TestedInput::new(
+            vec![vec![Cell::Int(2), Cell::Text("foo\nbar")]],
+            vec!["more\nspam \x1b[31meggs\x1b[0m", "more spam\n& eggs"],
+        );
+        let expected = vec![
+            "       more  more spam",
+            "  spam \x1b[31meggs\x1b[0m  & eggs",
             "-----------  -----------",
             "          2  foo",
             "             bar",
