@@ -38,6 +38,7 @@ jobs:
         name: Test
         with:
           command: test
+          args: --all-features
 
       - uses: actions-rs/cargo@v1
         name: Check format

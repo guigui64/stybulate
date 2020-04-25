@@ -12,12 +12,16 @@ Inspired by the PyPi package <https://pypi.org/project/tabulate/>.
 ### Example
 
 ```rust
-use stybulate::{tabulate, Style, Cell};
-let headers = vec!["strings", "numbers"];
-let contents = vec![
-    vec![Cell::Text("answer"), Cell::Int(42)],
-    vec![Cell::Text("pi"), Cell::Float(3.1415)],
-];
+use stybulate::{Table, Style, Cell, Headers};
+let result = Table::new(
+    Style::Fancy,
+    vec![
+        vec![Cell::from("answer"), Cell::Int(42)],
+        vec![Cell::from("pi"), Cell::Float(3.1415)],
+    ],
+    Some(Headers::from(vec!["strings", "numbers"])),
+)
+.tabulate();
 let expected = vec![
     "╒═══════════╤═══════════╕",
     "│ strings   │   numbers │",
@@ -27,8 +31,7 @@ let expected = vec![
     "│ pi        │    3.1415 │",
     "╘═══════════╧═══════════╛",
 ].join("\n");
-let table = tabulate(Style::Fancy, contents, headers);
-assert_eq!(expected, table);
+assert_eq!(expected, result);
 ```
 
 ### Change log

@@ -6,12 +6,18 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [next]
 
+* API Change: now a `Table` object needs to be created
+* An `Unstyle` trait can be implemented for the text content. Default impl is
+  given for `String`s
+* Use `AsciiEscapedString`s when embedding ASCII escape sequences in a str.
+  Using a `String` won't work anymore.
+
 ## [0.1.1] - 2020-04-20
 
 * Regex dependency removed
 * New styles added (FancyGithub and FancyPresto)
 * Handle unicode strings (in width calculus)
-* colored text supported
+* Colored text supported
 
 ## [0.1.0] - 2020-04-17
 

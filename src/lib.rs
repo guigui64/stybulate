@@ -6,12 +6,16 @@
 //!
 //! # Examples
 //! ```
-//! use stybulate::{tabulate, Style, Cell};
-//! let headers = vec!["strings", "numbers"];
-//! let contents = vec![
-//!     vec![Cell::Text("answer"), Cell::Int(42)],
-//!     vec![Cell::Text("pi"), Cell::Float(3.1415)],
-//! ];
+//! use stybulate::{Table, Style, Cell, Headers};
+//! let result = Table::new(
+//!     Style::Fancy,
+//!     vec![
+//!         vec![Cell::from("answer"), Cell::Int(42)],
+//!         vec![Cell::from("pi"), Cell::Float(3.1415)],
+//!     ],
+//!     Some(Headers::from(vec!["strings", "numbers"])),
+//! )
+//! .tabulate();
 //! let expected = vec![
 //!     "╒═══════════╤═══════════╕",
 //!     "│ strings   │   numbers │",
@@ -21,135 +25,269 @@
 //!     "│ pi        │    3.1415 │",
 //!     "╘═══════════╧═══════════╛",
 //! ].join("\n");
-//! let table = tabulate(Style::Fancy, contents, headers);
-//! assert_eq!(expected, table);
+//! assert_eq!(expected, result);
 //! ```
 
+#![warn(missing_docs)]
+
 use std::cmp;
+use std::collections::HashMap;
 
 use unicode_width::UnicodeWidthStr;
+
+mod style;
+pub use style::{Align, Style};
+
+mod unstyle;
+pub use unstyle::{AsciiEscapedString, Unstyle};
+
+mod cell;
+pub use cell::Cell;
 
 // constants
 const MIN_PADDING: usize = 2;
 
-// --------------------------- Public ---------------------------
-
-/// The style of the table
-///
-/// Examples shown will have a header line and two content lines
-pub enum Style {
-    /// ```text
-    /// item      qty
-    /// spam       42
-    /// eggs      451
-    /// ```
-    Plain,
-    /// ```text
-    /// item      qty
-    /// ------  -----
-    /// spam       42
-    /// eggs      451
-    /// ```
-    Simple,
-    /// ```text
-    /// | item   |   qty |
-    /// |--------|-------|
-    /// | spam   |    42 |
-    /// | eggs   |   451 |
-    /// ```
-    Github,
-    /// ```text
-    /// +--------+-------+
-    /// | item   |   qty |
-    /// +========+=======+
-    /// | spam   |    42 |
-    /// +--------+-------+
-    /// | eggs   |   451 |
-    /// +--------+-------+
-    /// ```
-    Grid,
-    /// ```text
-    /// ╒════════╤═══════╕
-    /// │ item   │   qty │
-    /// ╞════════╪═══════╡
-    /// │ spam   │    42 │
-    /// ├────────┼───────┤
-    /// │ eggs   │   451 │
-    /// ╘════════╧═══════╛
-    /// ```
-    Fancy,
-    /// ```text
-    /// item   |   qty
-    ///--------+-------
-    /// spam   |    42
-    /// eggs   |   451
-    /// ```
-    Presto,
-    /// ```text
-    /// │ item   │   qty │
-    /// ├────────┼───────┤
-    /// │ spam   │    42 │
-    /// │ eggs   │   451 │
-    /// ```
-    FancyGithub,
-    /// ```text
-    /// item   │   qty
-    /// ───────┼──────
-    /// spam   │    42
-    /// eggs   │   451
-    /// ```
-    FancyPresto,
+/// The Headers structure is a list of headers (per column)
+/// # Example
+/// ```
+/// use stybulate::{AsciiEscapedString, Headers};
+/// // simple example with only strings
+/// let simple = Headers::from(vec!["foo", "bar"]);
+/// // more elaborated example with a mix of a styled string and a simple string
+/// let mut with_style = Headers::with_capacity(2);
+/// with_style
+///     .push(AsciiEscapedString::from("\x1b[1;35mfoo\x1b[0m bar"))
+///     .push(String::from("baz"));
+/// ```
+#[derive(Default)]
+pub struct Headers {
+    headers: Vec<Box<dyn Unstyle>>,
 }
 
-/// The column alignments
-///
-/// Numbers are only considered as non-text when align is `Decimal`.
-#[derive(PartialEq)]
-pub enum Align {
-    /// Left aligned text
-    Left,
-    /// Centered text
-    Center,
-    /// Right aligned text
-    Right,
-    /// Numbers right aligned and aligned with their fractional dot
-    Decimal,
+impl Headers {
+    /// Headers constructor: creates an empty header
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    /// Headers constructor from a vec of `&str`
+    pub fn from(headers: Vec<&str>) -> Self {
+        let mut unstyle_headers: Vec<Box<dyn Unstyle>> = Vec::with_capacity(headers.len());
+        for header in headers.iter() {
+            unstyle_headers.push(Box::new(String::from(*header)));
+        }
+        Self {
+            headers: unstyle_headers,
+        }
+    }
+
+    /// Headers constructor with capacity
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            headers: Vec::with_capacity(capacity),
+        }
+    }
+
+    /// Add a header to the Headers
+    pub fn push<H: Unstyle + 'static>(&mut self, header: H) -> &mut Self {
+        self.headers.push(Box::new(header));
+        self
+    }
+
+    fn len(&self) -> usize {
+        self.headers.len()
+    }
+
+    #[allow(clippy::borrowed_box)]
+    fn get(&self, i: usize) -> Option<&Box<dyn Unstyle>> {
+        self.headers.get(i)
+    }
+
+    #[allow(clippy::borrowed_box)]
+    fn to_ref_vec(&self) -> Vec<&Box<dyn Unstyle>> {
+        self.headers.iter().map(|b| b).collect()
+    }
 }
 
-/// The content of each cell of the table (either a string or a number)
-pub enum Cell<'a> {
-    Int(i32),
-    Float(f64),
-    Text(&'a str),
-}
-
-// ---------------------------------- API ----------------------------------
-
-/// Tabulate with default alignment (left for strings and decimal for numbers)
-pub fn tabulate(style: Style, contents: Vec<Vec<Cell>>, headers: Vec<&str>) -> String {
-    tabulate_with_align(style, contents, headers, Align::Left, Align::Decimal)
-}
-
-/// Tabulate
-/// # Panics
-/// Panics if str_align is equal to `Decimal`.
-pub fn tabulate_with_align(
+/// The Table structure
+/// # Example
+/// ```
+/// use::stybulate::*;
+/// let mut table = Table::new(
+///     Style::Fancy,
+///     vec![
+///         vec![Cell::from("answer"), Cell::Int(42)],
+///         vec![Cell::from("pi"), Cell::Float(3.1415)],
+///     ],
+///     Some(Headers::from(vec!["strings", "numbers"]))
+/// );
+/// table.set_align(Align::Center, Align::Right);
+/// ```
+pub struct Table {
     style: Style,
-    contents: Vec<Vec<Cell>>,
-    headers: Vec<&str>,
     str_align: Align,
     num_align: Align,
-) -> String {
-    if str_align == Align::Decimal {
-        panic!("str_align should not be set to Decimal, only num_align can");
+    contents: Vec<Vec<Cell>>,
+    headers: Option<Headers>,
+}
+
+impl Table {
+    /// Table constructor with default alignments (`Align::Left` for strings and `Align::Decimal` for numbers)
+    pub fn new(style: Style, contents: Vec<Vec<Cell>>, headers: Option<Headers>) -> Self {
+        Self {
+            style,
+            str_align: Align::Left,
+            num_align: Align::Decimal,
+            contents,
+            headers,
+        }
     }
-    let fmt = style.to_format();
-    // number of columns
-    let col_nb = cmp::max(
-        headers.len(),
-        *contents.iter().map(Vec::len).max().get_or_insert(0),
-    );
-    // column specs = [0]: true if only made of numbers & [1]: digits offset
+
+    /// Set the table alignments (defaults are `Align::Left` for strings and `Align::Decimal` for numbers)
+    /// # Panics
+    /// Panics if str_align is equal to `Align::Decimal`
+    pub fn set_align(&mut self, str_align: Align, num_align: Align) {
+        if str_align == Align::Decimal {
+            panic!("str_align should not be set to Decimal, only num_align can");
+        }
+        self.str_align = str_align;
+        self.num_align = num_align;
+    }
+
+    /// Creates the table as a `String`
+    pub fn tabulate(&self) -> String {
+        let style = &self.style;
+        let headers = &self.headers;
+        let contents = &self.contents;
+        let str_align = &self.str_align;
+        let num_align = &self.num_align;
+        let fmt = style.to_format();
+        // number of columns
+        let header_len = if let Some(h) = headers { h.len() } else { 0 };
+        let col_nb = cmp::max(
+            header_len,
+            *contents.iter().map(Vec::len).max().get_or_insert(0),
+        );
+        // column specs = [0]: true if only made of numbers & [1]: digits offset
+        let col_spec = get_col_specs(col_nb, contents);
+        // max width of the content of each column
+        let col_width = get_col_width(col_nb, headers, contents, &col_spec, num_align);
+        // Build the lines
+        let mut lines = vec![];
+        // lineabove
+        if !(headers.is_some() && fmt.hidelineaboveifheader) {
+            if let Some(lineabove) = fmt.lineabove {
+                lines.push(create_line(&lineabove, &col_width));
+            }
+        }
+        if let Some(headers) = headers {
+            // headerrow
+            let headers: Vec<&Box<dyn Unstyle>> = headers.to_ref_vec();
+            for data in create_data_lines(&headers, &str_align, &num_align, &col_width, &col_spec) {
+                lines.push(create_data_line(&fmt.headerrow, col_nb, &data));
+            }
+            // linebelowheader
+            if let Some(linebelowheader) = fmt.linebelowheader {
+                lines.push(create_line(&linebelowheader, &col_width));
+            }
+        }
+        // loop on contents
+        for (i, content) in contents.iter().enumerate() {
+            // linebetweenrows
+            if i != 0 {
+                if let Some(linebetweenrows) = fmt.linebetweenrows.clone() {
+                    lines.push(create_line(&linebetweenrows, &col_width));
+                }
+            }
+            // datarow
+            let mut unstylable_content = Vec::with_capacity(content.len());
+            let mut temp_unstyle_store = HashMap::new();
+            let mut temp_strings_store = HashMap::new();
+            for (col, cell) in content.iter().enumerate() {
+                if let Some(u) = cell.to_unstylable() {
+                    temp_unstyle_store.insert(col, u);
+                } else {
+                    temp_strings_store.insert(
+                        col,
+                        Box::new(cell.to_string_with_precision(col_spec[col].1).unwrap())
+                            as Box<dyn Unstyle>,
+                    );
+                }
+            }
+            for col in 0..col_nb {
+                if let Some(u) = temp_unstyle_store.get(&col) {
+                    unstylable_content.push(*u);
+                } else {
+                    unstylable_content.push(temp_strings_store.get(&col).unwrap());
+                }
+            }
+            for data in create_data_lines(
+                &unstylable_content,
+                &str_align,
+                &num_align,
+                &col_width,
+                &col_spec,
+            ) {
+                lines.push(create_data_line(&fmt.datarow, col_nb, &data));
+            }
+        }
+        // linebelow
+        if !(headers.is_some() && fmt.hidelinebelowifheader) {
+            if let Some(linebelow) = fmt.linebelow {
+                lines.push(create_line(&linebelow, &col_width));
+            }
+        }
+        // finally join all lines
+        lines.join("\n")
+    }
+}
+
+// --------------------------- Private ---------------------------
+
+fn get_col_width(
+    col_nb: usize,
+    headers: &Option<Headers>,
+    contents: &[Vec<Cell>],
+    col_spec: &[(bool, usize)],
+    num_align: &Align,
+) -> Vec<usize> {
+    let mut col_width = vec![0; col_nb];
+    for col in 0..col_nb {
+        let mut max = 0;
+        if let Some(headers) = headers {
+            if let Some(h) = headers.get(col) {
+                max = *h
+                    .unstyle()
+                    .split('\n')
+                    .map(|s| UnicodeWidthStr::width(&s as &str))
+                    .max()
+                    .get_or_insert(0)
+                    + MIN_PADDING;
+            }
+        }
+        for row in contents.iter() {
+            if let Some(c) = row.get(col) {
+                let width = if col_spec[col].0 /* a number */ && num_align == &Align::Decimal && col_spec[col].1 > 0
+                {
+                    c.to_string_with_precision(col_spec[col].1).unwrap().len()
+                } else if let Some(u) = c.to_unstylable() {
+                    *u.unstyle()
+                        .split('\n')
+                        .map(|s| UnicodeWidthStr::width(&s as &str))
+                        .max()
+                        .get_or_insert(0)
+                } else {
+                    c.to_string().unwrap().len()
+                };
+                max = cmp::max(width, max);
+            }
+        }
+        col_width[col] = max;
+    }
+    col_width
+}
+
+fn get_col_specs(col_nb: usize, contents: &[Vec<Cell>]) -> Vec<(bool, usize)> {
     let mut col_spec = vec![(false, 0); col_nb];
     for (col, spec) in col_spec.iter_mut().enumerate().take(col_nb) {
         let mut max = 0;
@@ -165,243 +303,10 @@ pub fn tabulate_with_align(
         }
         *spec = (all, max);
     }
-    // max width of the content of each column
-    let mut col_width = vec![0; col_nb];
-    for col in 0..col_nb {
-        let mut max = 0;
-        if let Some(h) = headers.get(col) {
-            max = *h
-                .split('\n')
-                .map(strip)
-                .map(|s| UnicodeWidthStr::width(&s as &str))
-                .max()
-                .get_or_insert(0)
-                + MIN_PADDING;
-        }
-        for row in contents.iter() {
-            if let Some(c) = row.get(col) {
-                let width = if col_spec[col].0 && num_align == Align::Decimal && col_spec[col].1 > 0
-                {
-                    c.to_str_with_digits(col_spec[col].1).len()
-                } else {
-                    *c.to_str()
-                        .split('\n')
-                        .map(strip)
-                        .map(|s| UnicodeWidthStr::width(&s as &str))
-                        .max()
-                        .get_or_insert(0)
-                };
-                max = cmp::max(width, max);
-            }
-        }
-        col_width[col] = max;
-    }
-    // Build the lines
-    let mut lines = vec![];
-    let hasheader = !headers.is_empty();
-    // lineabove
-    if !(hasheader && fmt.hidelineaboveifheader) {
-        if let Some(lineabove) = fmt.lineabove {
-            lines.push(create_line(&lineabove, &col_width));
-        }
-    }
-    if hasheader {
-        // headerrow
-        let headers = line_to_multi(headers.iter().map(|s| (*s).to_string()).collect());
-        for headerline in headers.iter() {
-            lines.push(create_data_line(
-                &fmt.headerrow,
-                col_nb,
-                &col_width,
-                &col_spec,
-                &num_align,
-                &str_align,
-                &headerline.iter().map(|s| &s as &str).collect::<Vec<&str>>()[..],
-            ));
-        }
-        // linebelowheader
-        if let Some(linebelowheader) = fmt.linebelowheader {
-            lines.push(create_line(&linebelowheader, &col_width));
-        }
-    }
-    // loop on contents
-    for (i, content) in contents.iter().enumerate() {
-        // linebetweenrows
-        if i != 0 {
-            if let Some(linebetweenrows) = fmt.linebetweenrows.clone() {
-                lines.push(create_line(&linebetweenrows, &col_width));
-            }
-        }
-        // datarow
-        {
-            // convert cells to string
-            let content = line_to_multi(
-                content
-                    .iter()
-                    .enumerate()
-                    .map(|(col, cell)| cell.to_str_with_digits(col_spec[col].1))
-                    .collect(),
-            );
-            for contentline in content.iter() {
-                lines.push(create_data_line(
-                    &fmt.datarow,
-                    col_nb,
-                    &col_width,
-                    &col_spec,
-                    &num_align,
-                    &str_align,
-                    &contentline
-                        .iter()
-                        .map(|s| &s as &str)
-                        .collect::<Vec<&str>>()[..],
-                ));
-            }
-        }
-    }
-    // linebelow
-    if !(hasheader && fmt.hidelinebelowifheader) {
-        if let Some(linebelow) = fmt.linebelow {
-            lines.push(create_line(&linebelow, &col_width));
-        }
-    }
-    // finally join all lines
-    lines.join("\n")
+    col_spec
 }
 
-// --------------------------- Private ---------------------------
-
-impl Style {
-    fn to_format(&self) -> TableFormat {
-        let basicrow = DataRow::new("", "  ", "");
-        let emptyformat = TableFormat {
-            lineabove: None,
-            linebelowheader: None,
-            linebetweenrows: None,
-            linebelow: None,
-            headerrow: basicrow.clone(),
-            datarow: basicrow,
-            padding: 0,
-            hidelineaboveifheader: false,
-            hidelinebelowifheader: false,
-        };
-        let basicline = Line::new("", "-", "  ", "");
-        let piperow = DataRow::new("| ", " | ", " |");
-        let single_line = Line::new("", "─", "─┼─", "");
-        let single_line_with_ends = Line::new("├─", "─", "─┼─", "─┤");
-        let row_line = DataRow::new("", " │ ", "");
-        let row_line_with_ends = DataRow::new("│ ", " │ ", " │");
-        match self {
-            Self::Plain => emptyformat,
-            Self::Simple => TableFormat {
-                lineabove: Some(basicline.clone()),
-                linebelowheader: Some(basicline.clone()),
-                linebelow: Some(basicline),
-                hidelineaboveifheader: true,
-                hidelinebelowifheader: true,
-                ..emptyformat
-            },
-            Self::Github => {
-                let line = Line::new("|-", "-", "-|-", "-|");
-                TableFormat {
-                    lineabove: Some(line.clone()),
-                    linebelowheader: Some(line),
-                    headerrow: piperow.clone(),
-                    datarow: piperow,
-                    padding: 1,
-                    hidelineaboveifheader: true,
-                    ..emptyformat
-                }
-            }
-            Self::Grid => {
-                let line = Line::new("+-", "-", "-+-", "-+");
-                TableFormat {
-                    lineabove: Some(line.clone()),
-                    linebelowheader: Some(Line::new("+=", "=", "=+=", "=+")),
-                    linebetweenrows: Some(line.clone()),
-                    linebelow: Some(line),
-                    headerrow: piperow.clone(),
-                    datarow: piperow,
-                    padding: 1,
-                    ..emptyformat
-                }
-            }
-            Self::Fancy => TableFormat {
-                lineabove: Some(Line::new("╒═", "═", "═╤═", "═╕")),
-                linebelowheader: Some(Line::new("╞═", "═", "═╪═", "═╡")),
-                linebetweenrows: Some(single_line_with_ends),
-                linebelow: Some(Line::new("╘═", "═", "═╧═", "═╛")),
-                headerrow: row_line_with_ends.clone(),
-                datarow: row_line_with_ends,
-                padding: 1,
-                ..emptyformat
-            },
-            Self::Presto => {
-                let row = DataRow::new(" ", " | ", " ");
-                TableFormat {
-                    linebelowheader: Some(Line::new("-", "-", "-+-", "-")),
-                    headerrow: row.clone(),
-                    datarow: row,
-                    padding: 1,
-                    ..emptyformat
-                }
-            }
-            Self::FancyGithub => TableFormat {
-                linebelowheader: Some(single_line_with_ends),
-                headerrow: row_line_with_ends.clone(),
-                datarow: row_line_with_ends,
-                padding: 1,
-                ..emptyformat
-            },
-            Self::FancyPresto => TableFormat {
-                linebelowheader: Some(single_line),
-                headerrow: row_line.clone(),
-                datarow: row_line,
-                padding: 1,
-                ..emptyformat
-            },
-        }
-    }
-}
-
-impl Cell<'_> {
-    fn is_a_number(&self) -> bool {
-        match self {
-            Self::Int(_) | Self::Float(_) => true,
-            _ => false,
-        }
-    }
-
-    fn to_str(&self) -> String {
-        match self {
-            Self::Text(s) => (*s).to_string(),
-            Self::Int(i) => i.to_string(),
-            Self::Float(f) => f.to_string(),
-        }
-    }
-
-    fn to_str_with_digits(&self, digits: usize) -> String {
-        match self {
-            Self::Text(s) => (*s).to_string(),
-            Self::Int(i) => format!("{:.prec$}", *i as f64, prec = digits),
-            Self::Float(f) => format!("{:.prec$}", f, prec = digits),
-        }
-    }
-
-    fn digits_len(&self) -> usize {
-        if let Self::Float(f) = self {
-            let s = f.to_string();
-            if let Some(pos) = s.find('.') {
-                s.len() - (pos + 1)
-            } else {
-                0
-            }
-        } else {
-            0
-        }
-    }
-}
-
-fn create_line(line: &Line, col_width: &[usize]) -> String {
+fn create_line(line: &style::Line, col_width: &[usize]) -> String {
     (line.begin.clone()
         + &col_width
             .iter()
@@ -413,149 +318,86 @@ fn create_line(line: &Line, col_width: &[usize]) -> String {
         .to_string()
 }
 
-fn create_data_line(
-    row: &DataRow,
-    col_nb: usize,
+fn create_data_line(row: &style::DataRow, col_nb: usize, content: &[String]) -> String {
+    let mut v = Vec::with_capacity(col_nb);
+    for col in 0..col_nb {
+        if let Some(c) = content.get(col) {
+            v.push(String::from(c));
+        } else {
+            v.push(String::from(""));
+        }
+    }
+    (row.begin.clone() + &v.join(&row.sep) + &row.end)
+        .trim_end()
+        .to_string()
+}
+
+#[allow(clippy::borrowed_box)]
+fn format_unstylable(
+    word: &Box<dyn Unstyle>,
+    line_idx: usize,
+    align: &Align,
+    width: usize,
+) -> String {
+    if let Some(unstyled_word) = word.unstyle().split('\n').nth(line_idx) {
+        let word = word.to_string();
+        let word = word
+            .split('\n')
+            .nth(line_idx)
+            .expect("unstyled word can't have more \\n than styled one");
+        let width = width - (unstyled_word.len() - UnicodeWidthStr::width(&unstyled_word as &str));
+        let formatted = match align {
+            Align::Right => format!("{:>width$}", unstyled_word, width = width),
+            Align::Left => format!("{:<width$}", unstyled_word, width = width),
+            Align::Center => format!("{:^width$}", unstyled_word, width = width),
+            Align::Decimal => {
+                let mut out = format!("{:>width$}", unstyled_word, width = width);
+                if let Some(dot) = out.rfind('.') {
+                    if out[(dot + 1)..].bytes().all(|c| c == b'0') {
+                        out.replace_range(dot.., &" ".repeat(out.len() - dot));
+                    }
+                }
+                out
+            }
+        };
+        if unstyled_word != word {
+            formatted.replace(&unstyled_word, &word)
+        } else {
+            formatted
+        }
+    } else {
+        " ".repeat(width)
+    }
+}
+
+#[allow(clippy::borrowed_box)]
+fn create_data_lines(
+    content: &[&Box<dyn Unstyle>],
+    str_align: &Align,
+    num_align: &Align,
     col_width: &[usize],
     col_spec: &[(bool, usize)],
-    num_align: &Align,
-    str_align: &Align,
-    content: &[&str],
-) -> String {
-    (row.begin.clone()
-        + &(0..col_nb)
-            .map(|col| {
-                (
-                    content.get(col).unwrap_or(&""),
-                    col_width[col],
-                    col_spec[col],
-                )
-            })
-            .map(|(word, width, col_spec)| {
-                let align = if col_spec.0 {
+) -> Vec<Vec<String>> {
+    let lines_nb = content.iter().map(|u| u.nb_of_lines()).max().unwrap();
+    let mut lines = Vec::with_capacity(lines_nb);
+    for i in 0..lines_nb {
+        let formatted: Vec<_> = content
+            .iter()
+            .enumerate()
+            .map(|(col, text)| {
+                let align = if col_spec[col].0 {
                     // numbers only
                     &num_align
                 } else {
                     // strings only
                     &str_align
                 };
-                let stripped_word = strip(word);
-                let width =
-                    width - (stripped_word.len() - UnicodeWidthStr::width(&stripped_word as &str));
-                let formatted = match *align {
-                    Align::Right => format!("{:>width$}", stripped_word, width = width),
-                    Align::Left => format!("{:<width$}", stripped_word, width = width),
-                    Align::Center => format!("{:^width$}", stripped_word, width = width),
-                    Align::Decimal => {
-                        let mut out = format!("{:>width$}", stripped_word, width = width);
-                        if let Some(dot) = out.rfind('.') {
-                            if out[(dot + 1)..].bytes().all(|c| c == b'0') {
-                                out.replace_range(dot.., &" ".repeat(out.len() - dot));
-                            }
-                        }
-                        out
-                    }
-                };
-                if &stripped_word != word {
-                    formatted.replace(&stripped_word, word)
-                } else {
-                    formatted
-                }
+                format_unstylable(text, i, &align, col_width[col])
             })
-            .collect::<Vec<String>>()
-            .join(&row.sep)
-        + &row.end)
-        .trim_end()
-        .to_string()
-}
-
-fn line_to_multi(mut line: Vec<String>) -> Vec<Vec<String>> {
-    let mut multi = vec![];
-
-    if line.iter().any(|s| s.contains('\n')) {
-        loop {
-            let mut rest = vec![];
-            for c in line.iter_mut() {
-                if let Some(idx) = c.find('\n') {
-                    let next = c.split_off(idx);
-                    rest.push(String::from(&next[1..]));
-                } else {
-                    rest.push(String::from(""));
-                }
-            }
-            multi.push(line);
-            if rest.iter().all(|s| s == &String::from("")) {
-                break;
-            } else {
-                line = rest;
-            }
-        }
-    } else {
-        multi.push(line);
+            .collect();
+        lines.push(formatted);
     }
-
-    multi
-}
-
-fn strip(s: &str) -> String {
-    String::from(std::str::from_utf8(&strip_ansi_escapes::strip(s).unwrap()).unwrap())
-}
-
-#[derive(Clone)]
-struct Line {
-    begin: String,
-    hline: String,
-    sep: String,
-    end: String,
-}
-impl Line {
-    fn new(begin: &str, hline: &str, sep: &str, end: &str) -> Self {
-        Self {
-            begin: String::from(begin),
-            hline: String::from(hline),
-            sep: String::from(sep),
-            end: String::from(end),
-        }
-    }
-}
-
-#[derive(Clone)]
-struct DataRow {
-    begin: String,
-    sep: String,
-    end: String,
-}
-impl DataRow {
-    fn new(begin: &str, sep: &str, end: &str) -> Self {
-        Self {
-            begin: String::from(begin),
-            sep: String::from(sep),
-            end: String::from(end),
-        }
-    }
-}
-
-// A table is structured like so:
-//     --- lineabove ---------
-//         headerrow
-//     --- linebelowheader ---
-//         datarow
-//     --- linebetweenrows ---
-//     ... (more datarows) ...
-//     --- linebewteenrows ---
-//         last datarow
-//     --- linebelow ---------
-#[derive(Clone)]
-struct TableFormat {
-    lineabove: Option<Line>,
-    linebelowheader: Option<Line>,
-    linebetweenrows: Option<Line>,
-    linebelow: Option<Line>,
-    headerrow: DataRow,
-    datarow: DataRow,
-    padding: u32,
-    hidelineaboveifheader: bool,
-    hidelinebelowifheader: bool,
+    lines
 }
 
 // --------------------------- Tests ---------------------------
@@ -565,64 +407,102 @@ mod tests {
 
     use super::*;
 
-    struct TestedInput<'a> {
-        contents: Vec<Vec<Cell<'a>>>,
-        headers: Vec<&'a str>,
+    fn headerless(style: Style) -> Table {
+        Table::new(
+            style,
+            vec![
+                vec![Cell::from("spam"), Cell::Float(41.9999)],
+                vec![Cell::from("eggs"), Cell::Int(451)],
+            ],
+            None,
+        )
     }
 
-    impl<'a> TestedInput<'a> {
-        fn default() -> Self {
-            Self {
-                contents: vec![
-                    vec![Cell::Text("spam"), Cell::Float(41.9999)],
-                    vec![Cell::Text("eggs"), Cell::Int(451)],
+    fn table(style: Style) -> Table {
+        Table::new(
+            style.clone(),
+            headerless(style).contents,
+            Some(Headers::from(vec!["strings", "numbers"])),
+        )
+    }
+
+    fn multiline_headerless(style: Style) -> Table {
+        let mut table = Table::new(
+            style,
+            vec![
+                vec![Cell::from("foo bar\nbaz\nbau"), Cell::from("hello")],
+                vec![Cell::from(""), Cell::from("multiline\nworld")],
+            ],
+            None,
+        );
+        table.set_align(Align::Center, Align::Right);
+        table
+    }
+
+    fn multiline(style: Style) -> Table {
+        Table::new(
+            style,
+            vec![vec![Cell::Int(2), Cell::from("foo\nbar")]],
+            Some(Headers::from(vec!["more\nspam eggs", "more spam\n& eggs"])),
+        )
+    }
+
+    fn multiline_empty_cells(style: Style) -> Table {
+        Table::new(
+            style.clone(),
+            vec![
+                vec![Cell::Int(1), Cell::from(""), Cell::from("")],
+                vec![
+                    Cell::Int(2),
+                    Cell::from("very long data"),
+                    Cell::from("fold\nthis"),
                 ],
-                headers: vec!["strings", "numbers"],
-            }
-        }
+            ],
+            Some(Headers::from(vec!["hdr", "data", "fold"])),
+        )
+    }
 
-        fn with_contents(contents: Vec<Vec<Cell<'a>>>) -> Self {
-            Self {
-                contents,
-                headers: vec![],
-            }
-        }
-
-        fn new(contents: Vec<Vec<Cell<'a>>>, headers: Vec<&'a str>) -> Self {
-            Self { contents, headers }
-        }
+    fn multiline_empty_cells_headerless(style: Style) -> Table {
+        Table::new(
+            style,
+            vec![
+                vec![Cell::Int(0), Cell::from(""), Cell::from("")],
+                vec![Cell::Int(1), Cell::from(""), Cell::from("")],
+                vec![
+                    Cell::Int(2),
+                    Cell::from("very long data"),
+                    Cell::from("fold\nthis"),
+                ],
+            ],
+            None,
+        )
     }
 
     #[test]
     fn plain() {
         //Output: plain with headers
-        let tested_input = TestedInput::default();
+        let result = table(Style::Plain).tabulate();
         let expected = vec![
             "strings      numbers",
             "spam         41.9999",
             "eggs        451",
         ]
         .join("\n");
-        let result = tabulate(Style::Plain, tested_input.contents, tested_input.headers);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn plain_headerless() {
         //Output: plain without headers
-        let tested_input = TestedInput::default();
+        let result = headerless(Style::Plain).tabulate();
         let expected = vec!["spam   41.9999", "eggs  451"].join("\n");
-        let result = tabulate(Style::Plain, tested_input.contents, vec![]);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn plain_multiline_headerless() {
         //Output: plain with multiline cells without headers
-        let tested_input = TestedInput::with_contents(vec![
-            vec![Cell::Text("foo bar\nbaz\nbau"), Cell::Text("hello")],
-            vec![Cell::Text(""), Cell::Text("multiline\nworld")],
-        ]);
+        let result = multiline_headerless(Style::Plain).tabulate();
         let expected = vec![
             "foo bar    hello",
             "  baz",
@@ -631,23 +511,13 @@ mod tests {
             "           world",
         ]
         .join("\n");
-        let result = tabulate_with_align(
-            Style::Plain,
-            tested_input.contents,
-            tested_input.headers,
-            Align::Center,
-            Align::Right,
-        );
         assert_eq!(expected, result);
     }
 
     #[test]
     fn plain_multiline() {
         //Output: plain with multiline cells with headers
-        let tested_input = TestedInput::new(
-            vec![vec![Cell::Int(2), Cell::Text("foo\nbar")]],
-            vec!["more\nspam eggs", "more spam\n& eggs"],
-        );
+        let result = multiline(Style::Plain).tabulate();
         let expected = vec![
             "       more  more spam",
             "  spam eggs  & eggs",
@@ -655,24 +525,13 @@ mod tests {
             "             bar",
         ]
         .join("\n");
-        let result = tabulate(Style::Plain, tested_input.contents, tested_input.headers);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn plain_multiline_with_empty_cells() {
         //Output: plain with multiline cells and empty cells with headers
-        let tested_input = TestedInput::new(
-            vec![
-                vec![Cell::Int(1), Cell::Text(""), Cell::Text("")],
-                vec![
-                    Cell::Int(2),
-                    Cell::Text("very long data"),
-                    Cell::Text("fold\nthis"),
-                ],
-            ],
-            vec!["hdr", "data", "fold"],
-        );
+        let result = multiline_empty_cells(Style::Plain).tabulate();
         let expected = vec![
             "  hdr  data            fold",
             "    1",
@@ -680,22 +539,13 @@ mod tests {
             "                       this",
         ]
         .join("\n");
-        let result = tabulate(Style::Plain, tested_input.contents, tested_input.headers);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn plain_multiline_with_empty_cells_headerless() {
         //Output: plain with multiline cells and empty cells without headers
-        let tested_input = TestedInput::with_contents(vec![
-            vec![Cell::Int(0), Cell::Text(""), Cell::Text("")],
-            vec![Cell::Int(1), Cell::Text(""), Cell::Text("")],
-            vec![
-                Cell::Int(2),
-                Cell::Text("very long data"),
-                Cell::Text("fold\nthis"),
-            ],
-        ]);
+        let result = multiline_empty_cells_headerless(Style::Plain).tabulate();
         let expected = vec![
             "0",
             "1",
@@ -703,14 +553,13 @@ mod tests {
             "                   this",
         ]
         .join("\n");
-        let result = tabulate(Style::Plain, tested_input.contents, tested_input.headers);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn simple() {
         //Output: simple with headers
-        let tested_input = TestedInput::default();
+        let result = table(Style::Simple).tabulate();
         let expected = vec![
             "strings      numbers",
             "---------  ---------",
@@ -718,20 +567,22 @@ mod tests {
             "eggs        451",
         ]
         .join("\n");
-        let result = tabulate(Style::Simple, tested_input.contents, tested_input.headers);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn simple_multiline_2() {
         //Output: simple with multiline cells
-        let tested_input = TestedInput::new(
+        let mut table = Table::new(
+            Style::Simple,
             vec![
-                vec![Cell::Text("foo"), Cell::Text("bar")],
-                vec![Cell::Text("spam"), Cell::Text("multiline\nworld")],
+                vec![Cell::from("foo"), Cell::from("bar")],
+                vec![Cell::from("spam"), Cell::from("multiline\nworld")],
             ],
-            vec!["key", "value"],
+            Some(Headers::from(vec!["key", "value"])),
         );
+        table.set_align(Align::Center, Align::Right);
+        let result = table.tabulate();
         let expected = vec![
             " key     value",
             "-----  ---------",
@@ -740,20 +591,13 @@ mod tests {
             "         world",
         ]
         .join("\n");
-        let result = tabulate_with_align(
-            Style::Simple,
-            tested_input.contents,
-            tested_input.headers,
-            Align::Center,
-            Align::Right,
-        );
         assert_eq!(expected, result);
     }
 
     #[test]
     fn simple_headerless() {
         //Output: simple without headers
-        let tested_input = TestedInput::default();
+        let result = headerless(Style::Simple).tabulate();
         let expected = vec![
             "----  --------",
             "spam   41.9999",
@@ -761,17 +605,13 @@ mod tests {
             "----  --------",
         ]
         .join("\n");
-        let result = tabulate(Style::Simple, tested_input.contents, vec![]);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn simple_multiline_headerless() {
         //Output: simple with multiline cells without headers
-        let tested_input = TestedInput::with_contents(vec![
-            vec![Cell::Text("foo bar\nbaz\nbau"), Cell::Text("hello")],
-            vec![Cell::Text(""), Cell::Text("multiline\nworld")],
-        ]);
+        let result = multiline_headerless(Style::Simple).tabulate();
         let expected = vec![
             "-------  ---------",
             "foo bar    hello",
@@ -782,23 +622,13 @@ mod tests {
             "-------  ---------",
         ]
         .join("\n");
-        let result = tabulate_with_align(
-            Style::Simple,
-            tested_input.contents,
-            tested_input.headers,
-            Align::Center,
-            Align::Right,
-        );
         assert_eq!(expected, result);
     }
 
     #[test]
     fn simple_multiline() {
         //Output: simple with multiline cells with headers
-        let tested_input = TestedInput::new(
-            vec![vec![Cell::Int(2), Cell::Text("foo\nbar")]],
-            vec!["more\nspam eggs", "more spam\n& eggs"],
-        );
+        let result = multiline(Style::Simple).tabulate();
         let expected = vec![
             "       more  more spam",
             "  spam eggs  & eggs",
@@ -807,17 +637,22 @@ mod tests {
             "             bar",
         ]
         .join("\n");
-        let result = tabulate(Style::Simple, tested_input.contents, tested_input.headers);
         assert_eq!(expected, result);
     }
 
     #[test]
-    fn simple_multiline_ansi() {
-        //Output: simple with multiline headers and colors (ansi escape)
-        let tested_input = TestedInput::new(
-            vec![vec![Cell::Int(2), Cell::Text("foo\nbar")]],
-            vec!["more\nspam \x1b[31meggs\x1b[0m", "more spam\n& eggs"],
-        );
+    fn simple_multiline_ascii_escaped() {
+        //Output: simple with multiline headers and colors (ascii escape)
+        let mut headers = Headers::with_capacity(2);
+        headers
+            .push(AsciiEscapedString::from("more\nspam \x1b[31meggs\x1b[0m"))
+            .push(String::from("more spam\n& eggs"));
+        let result = Table::new(
+            Style::Simple,
+            vec![vec![Cell::Int(2), Cell::from("foo\nbar")]],
+            Some(headers),
+        )
+        .tabulate();
         let expected = vec![
             "       more  more spam",
             "  spam \x1b[31meggs\x1b[0m  & eggs",
@@ -826,24 +661,13 @@ mod tests {
             "             bar",
         ]
         .join("\n");
-        let result = tabulate(Style::Simple, tested_input.contents, tested_input.headers);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn simple_multiline_with_empty_cells() {
         //Output: simple with multiline cells and empty cells with headers
-        let tested_input = TestedInput::new(
-            vec![
-                vec![Cell::Int(1), Cell::Text(""), Cell::Text("")],
-                vec![
-                    Cell::Int(2),
-                    Cell::Text("very long data"),
-                    Cell::Text("fold\nthis"),
-                ],
-            ],
-            vec!["hdr", "data", "fold"],
-        );
+        let result = multiline_empty_cells(Style::Simple).tabulate();
         let expected = vec![
             "  hdr  data            fold",
             "-----  --------------  ------",
@@ -852,22 +676,13 @@ mod tests {
             "                       this",
         ]
         .join("\n");
-        let result = tabulate(Style::Simple, tested_input.contents, tested_input.headers);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn simple_multiline_with_empty_cells_headerless() {
         //Output: simple with multiline cells and empty cells without headers
-        let tested_input = TestedInput::with_contents(vec![
-            vec![Cell::Int(0), Cell::Text(""), Cell::Text("")],
-            vec![Cell::Int(1), Cell::Text(""), Cell::Text("")],
-            vec![
-                Cell::Int(2),
-                Cell::Text("very long data"),
-                Cell::Text("fold\nthis"),
-            ],
-        ]);
+        let result = multiline_empty_cells_headerless(Style::Simple).tabulate();
         let expected = vec![
             "-  --------------  ----",
             "0",
@@ -877,14 +692,13 @@ mod tests {
             "-  --------------  ----",
         ]
         .join("\n");
-        let result = tabulate(Style::Simple, tested_input.contents, tested_input.headers);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn github() {
         //Output: github with headers
-        let tested_input = TestedInput::default();
+        let result = table(Style::Github).tabulate();
         let expected = vec![
             "| strings   |   numbers |",
             "|-----------|-----------|",
@@ -892,14 +706,13 @@ mod tests {
             "| eggs      |  451      |",
         ]
         .join("\n");
-        let result = tabulate(Style::Github, tested_input.contents, tested_input.headers);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn grid() {
         //Output: grid with headers
-        let tested_input = TestedInput::default();
+        let result = table(Style::Grid).tabulate();
         let expected = vec![
             "+-----------+-----------+",
             "| strings   |   numbers |",
@@ -910,23 +723,21 @@ mod tests {
             "+-----------+-----------+",
         ]
         .join("\n");
-        let result = tabulate(Style::Grid, tested_input.contents, tested_input.headers);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn grid_wide_characters() {
         //Output: grid with wide characters in headers
-        let unistr = "配列";
-        let headers = vec!["strings", unistr];
+        let headers = Headers::from(vec!["strings", "配列"]);
         let contents = vec![
             vec![
-                Cell::Text("Ответ на главный вопрос жизни, вселенной и всего такого"),
+                Cell::from("Ответ на главный вопрос жизни, вселенной и всего такого"),
                 Cell::Int(42),
             ],
-            vec![Cell::Text("pi"), Cell::Float(3.1415)],
+            vec![Cell::from("pi"), Cell::Float(3.1415)],
         ];
-        let tested_input = TestedInput { headers, contents };
+        let result = Table::new(Style::Grid, contents, Some(headers)).tabulate();
         let expected = vec![
             "+---------------------------------------------------------+---------+",
             "| strings                                                 |    配列 |",
@@ -937,14 +748,13 @@ mod tests {
             "+---------------------------------------------------------+---------+",
         ]
         .join("\n");
-        let result = tabulate(Style::Grid, tested_input.contents, tested_input.headers);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn grid_headerless() {
         //Output: grid without headers
-        let tested_input = TestedInput::default();
+        let result = headerless(Style::Grid).tabulate();
         let expected = vec![
             "+------+----------+",
             "| spam |  41.9999 |",
@@ -953,17 +763,13 @@ mod tests {
             "+------+----------+",
         ]
         .join("\n");
-        let result = tabulate(Style::Grid, tested_input.contents, vec![]);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn grid_multiline_headerless() {
         //Output: grid with multiline cells without headers
-        let tested_input = TestedInput::with_contents(vec![
-            vec![Cell::Text("foo bar\nbaz\nbau"), Cell::Text("hello")],
-            vec![Cell::Text(""), Cell::Text("multiline\nworld")],
-        ]);
+        let result = multiline_headerless(Style::Grid).tabulate();
         let expected = vec![
             "+---------+-----------+",
             "| foo bar |   hello   |",
@@ -975,23 +781,13 @@ mod tests {
             "+---------+-----------+",
         ]
         .join("\n");
-        let result = tabulate_with_align(
-            Style::Grid,
-            tested_input.contents,
-            tested_input.headers,
-            Align::Center,
-            Align::Right,
-        );
         assert_eq!(expected, result);
     }
 
     #[test]
     fn grid_multiline() {
         //Output: grid with multiline cells with headers
-        let tested_input = TestedInput::new(
-            vec![vec![Cell::Int(2), Cell::Text("foo\nbar")]],
-            vec!["more\nspam eggs", "more spam\n& eggs"],
-        );
+        let result = multiline(Style::Grid).tabulate();
         let expected = vec![
             "+-------------+-------------+",
             "|        more | more spam   |",
@@ -1002,24 +798,13 @@ mod tests {
             "+-------------+-------------+",
         ]
         .join("\n");
-        let result = tabulate(Style::Grid, tested_input.contents, tested_input.headers);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn grid_multiline_with_empty_cells() {
         //Output: grid with multiline cells and empty cells with headers
-        let tested_input = TestedInput::new(
-            vec![
-                vec![Cell::Int(1), Cell::Text(""), Cell::Text("")],
-                vec![
-                    Cell::Int(2),
-                    Cell::Text("very long data"),
-                    Cell::Text("fold\nthis"),
-                ],
-            ],
-            vec!["hdr", "data", "fold"],
-        );
+        let result = multiline_empty_cells(Style::Grid).tabulate();
         let expected = vec![
             "+-------+----------------+--------+",
             "|   hdr | data           | fold   |",
@@ -1031,22 +816,13 @@ mod tests {
             "+-------+----------------+--------+",
         ]
         .join("\n");
-        let result = tabulate(Style::Grid, tested_input.contents, tested_input.headers);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn grid_multiline_with_empty_cells_headerless() {
         //Output: grid with multiline cells and empty cells without headers
-        let tested_input = TestedInput::with_contents(vec![
-            vec![Cell::Int(0), Cell::Text(""), Cell::Text("")],
-            vec![Cell::Int(1), Cell::Text(""), Cell::Text("")],
-            vec![
-                Cell::Int(2),
-                Cell::Text("very long data"),
-                Cell::Text("fold\nthis"),
-            ],
-        ]);
+        let result = multiline_empty_cells_headerless(Style::Grid).tabulate();
         let expected = vec![
             "+---+----------------+------+",
             "| 0 |                |      |",
@@ -1058,14 +834,13 @@ mod tests {
             "+---+----------------+------+",
         ]
         .join("\n");
-        let result = tabulate(Style::Grid, tested_input.contents, tested_input.headers);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn fancy_grid() {
         //Output: fancy_grid with headers
-        let tested_input = TestedInput::default();
+        let result = table(Style::Fancy).tabulate();
         let expected = vec![
             "╒═══════════╤═══════════╕",
             "│ strings   │   numbers │",
@@ -1076,14 +851,13 @@ mod tests {
             "╘═══════════╧═══════════╛",
         ]
         .join("\n");
-        let result = tabulate(Style::Fancy, tested_input.contents, tested_input.headers);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn fancy_grid_headerless() {
         //Output: fancy_grid without headers
-        let tested_input = TestedInput::default();
+        let result = headerless(Style::Fancy).tabulate();
         let expected = vec![
             "╒══════╤══════════╕",
             "│ spam │  41.9999 │",
@@ -1092,17 +866,13 @@ mod tests {
             "╘══════╧══════════╛",
         ]
         .join("\n");
-        let result = tabulate(Style::Fancy, tested_input.contents, vec![]);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn fancy_grid_multiline_headerless() {
         //Output: fancy_grid with multiline cells without headers
-        let tested_input = TestedInput::with_contents(vec![
-            vec![Cell::Text("foo bar\nbaz\nbau"), Cell::Text("hello")],
-            vec![Cell::Text(""), Cell::Text("multiline\nworld")],
-        ]);
+        let result = multiline_headerless(Style::Fancy).tabulate();
         let expected = vec![
             "╒═════════╤═══════════╕",
             "│ foo bar │   hello   │",
@@ -1114,23 +884,13 @@ mod tests {
             "╘═════════╧═══════════╛",
         ]
         .join("\n");
-        let result = tabulate_with_align(
-            Style::Fancy,
-            tested_input.contents,
-            tested_input.headers,
-            Align::Center,
-            Align::Right,
-        );
         assert_eq!(expected, result);
     }
 
     #[test]
     fn fancy_grid_multiline() {
         //Output: fancy_grid with multiline cells with headers
-        let tested_input = TestedInput::new(
-            vec![vec![Cell::Int(2), Cell::Text("foo\nbar")]],
-            vec!["more\nspam eggs", "more spam\n& eggs"],
-        );
+        let result = multiline(Style::Fancy).tabulate();
         let expected = vec![
             "╒═════════════╤═════════════╕",
             "│        more │ more spam   │",
@@ -1141,24 +901,13 @@ mod tests {
             "╘═════════════╧═════════════╛",
         ]
         .join("\n");
-        let result = tabulate(Style::Fancy, tested_input.contents, tested_input.headers);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn fancy_grid_multiline_with_empty_cells() {
         //Output: fancy_grid with multiline cells and empty cells with headers
-        let tested_input = TestedInput::new(
-            vec![
-                vec![Cell::Int(1), Cell::Text(""), Cell::Text("")],
-                vec![
-                    Cell::Int(2),
-                    Cell::Text("very long data"),
-                    Cell::Text("fold\nthis"),
-                ],
-            ],
-            vec!["hdr", "data", "fold"],
-        );
+        let result = multiline_empty_cells(Style::Fancy).tabulate();
         let expected = vec![
             "╒═══════╤════════════════╤════════╕",
             "│   hdr │ data           │ fold   │",
@@ -1170,22 +919,13 @@ mod tests {
             "╘═══════╧════════════════╧════════╛",
         ]
         .join("\n");
-        let result = tabulate(Style::Fancy, tested_input.contents, tested_input.headers);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn fancy_grid_multiline_with_empty_cells_headerless() {
         //Output: fancy_grid with multiline cells and empty cells without headers
-        let tested_input = TestedInput::with_contents(vec![
-            vec![Cell::Int(0), Cell::Text(""), Cell::Text("")],
-            vec![Cell::Int(1), Cell::Text(""), Cell::Text("")],
-            vec![
-                Cell::Int(2),
-                Cell::Text("very long data"),
-                Cell::Text("fold\nthis"),
-            ],
-        ]);
+        let result = multiline_empty_cells_headerless(Style::Fancy).tabulate();
         let expected = vec![
             "╒═══╤════════════════╤══════╕",
             "│ 0 │                │      │",
@@ -1197,14 +937,13 @@ mod tests {
             "╘═══╧════════════════╧══════╛",
         ]
         .join("\n");
-        let result = tabulate(Style::Fancy, tested_input.contents, tested_input.headers);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn presto() {
         //Output: presto with headers
-        let tested_input = TestedInput::default();
+        let result = table(Style::Presto).tabulate();
         let expected = vec![
             " strings   |   numbers",
             "-----------+-----------",
@@ -1212,26 +951,21 @@ mod tests {
             " eggs      |  451",
         ]
         .join("\n");
-        let result = tabulate(Style::Presto, tested_input.contents, tested_input.headers);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn presto_headerless() {
         //Output: presto without headers
-        let tested_input = TestedInput::default();
+        let result = headerless(Style::Presto).tabulate();
         let expected = vec![" spam |  41.9999", " eggs | 451"].join("\n");
-        let result = tabulate(Style::Presto, tested_input.contents, vec![]);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn presto_multiline_headerless() {
         //Output: presto with multiline cells without headers
-        let tested_input = TestedInput::with_contents(vec![
-            vec![Cell::Text("foo bar\nbaz\nbau"), Cell::Text("hello")],
-            vec![Cell::Text(""), Cell::Text("multiline\nworld")],
-        ]);
+        let result = multiline_headerless(Style::Presto).tabulate();
         let expected = vec![
             " foo bar |   hello",
             "   baz   |",
@@ -1240,23 +974,13 @@ mod tests {
             "         |   world",
         ]
         .join("\n");
-        let result = tabulate_with_align(
-            Style::Presto,
-            tested_input.contents,
-            tested_input.headers,
-            Align::Center,
-            Align::Right,
-        );
         assert_eq!(expected, result);
     }
 
     #[test]
     fn presto_multiline() {
         //Output: presto with multiline cells with headers
-        let tested_input = TestedInput::new(
-            vec![vec![Cell::Int(2), Cell::Text("foo\nbar")]],
-            vec!["more\nspam eggs", "more spam\n& eggs"],
-        );
+        let result = multiline(Style::Presto).tabulate();
         let expected = vec![
             "        more | more spam",
             "   spam eggs | & eggs",
@@ -1265,24 +989,13 @@ mod tests {
             "             | bar",
         ]
         .join("\n");
-        let result = tabulate(Style::Presto, tested_input.contents, tested_input.headers);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn presto_multiline_with_empty_cells() {
         //Output: presto with multiline cells and empty cells with headers
-        let tested_input = TestedInput::new(
-            vec![
-                vec![Cell::Int(1), Cell::Text(""), Cell::Text("")],
-                vec![
-                    Cell::Int(2),
-                    Cell::Text("very long data"),
-                    Cell::Text("fold\nthis"),
-                ],
-            ],
-            vec!["hdr", "data", "fold"],
-        );
+        let result = multiline_empty_cells(Style::Presto).tabulate();
         let expected = vec![
             "   hdr | data           | fold",
             "-------+----------------+--------",
@@ -1291,22 +1004,13 @@ mod tests {
             "       |                | this",
         ]
         .join("\n");
-        let result = tabulate(Style::Presto, tested_input.contents, tested_input.headers);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn presto_multiline_with_empty_cells_headerless() {
         //Output: presto with multiline cells and empty cells without headers
-        let tested_input = TestedInput::with_contents(vec![
-            vec![Cell::Int(0), Cell::Text(""), Cell::Text("")],
-            vec![Cell::Int(1), Cell::Text(""), Cell::Text("")],
-            vec![
-                Cell::Int(2),
-                Cell::Text("very long data"),
-                Cell::Text("fold\nthis"),
-            ],
-        ]);
+        let result = multiline_empty_cells_headerless(Style::Presto).tabulate();
         let expected = vec![
             " 0 |                |",
             " 1 |                |",
@@ -1314,13 +1018,12 @@ mod tests {
             "   |                | this",
         ]
         .join("\n");
-        let result = tabulate(Style::Presto, tested_input.contents, tested_input.headers);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn fancygithub_grid() {
-        let tested_input = TestedInput::default();
+        let result = table(Style::FancyGithub).tabulate();
         let expected = vec![
             "│ strings   │   numbers │",
             "├───────────┼───────────┤",
@@ -1328,28 +1031,19 @@ mod tests {
             "│ eggs      │  451      │",
         ]
         .join("\n");
-        let result = tabulate(
-            Style::FancyGithub,
-            tested_input.contents,
-            tested_input.headers,
-        );
         assert_eq!(expected, result);
     }
 
     #[test]
     fn fancygithub_grid_headerless() {
-        let tested_input = TestedInput::default();
+        let result = headerless(Style::FancyGithub).tabulate();
         let expected = vec!["│ spam │  41.9999 │", "│ eggs │ 451      │"].join("\n");
-        let result = tabulate(Style::FancyGithub, tested_input.contents, vec![]);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn fancygithub_grid_multiline_headerless() {
-        let tested_input = TestedInput::with_contents(vec![
-            vec![Cell::Text("foo bar\nbaz\nbau"), Cell::Text("hello")],
-            vec![Cell::Text(""), Cell::Text("multiline\nworld")],
-        ]);
+        let result = multiline_headerless(Style::FancyGithub).tabulate();
         let expected = vec![
             "│ foo bar │   hello   │",
             "│   baz   │           │",
@@ -1358,22 +1052,12 @@ mod tests {
             "│         │   world   │",
         ]
         .join("\n");
-        let result = tabulate_with_align(
-            Style::FancyGithub,
-            tested_input.contents,
-            tested_input.headers,
-            Align::Center,
-            Align::Right,
-        );
         assert_eq!(expected, result);
     }
 
     #[test]
     fn fancygithub_grid_multiline() {
-        let tested_input = TestedInput::new(
-            vec![vec![Cell::Int(2), Cell::Text("foo\nbar")]],
-            vec!["more\nspam eggs", "more spam\n& eggs"],
-        );
+        let result = multiline(Style::FancyGithub).tabulate();
         let expected = vec![
             "│        more │ more spam   │",
             "│   spam eggs │ & eggs      │",
@@ -1382,27 +1066,12 @@ mod tests {
             "│             │ bar         │",
         ]
         .join("\n");
-        let result = tabulate(
-            Style::FancyGithub,
-            tested_input.contents,
-            tested_input.headers,
-        );
         assert_eq!(expected, result);
     }
 
     #[test]
     fn fancygithub_grid_multiline_with_empty_cells() {
-        let tested_input = TestedInput::new(
-            vec![
-                vec![Cell::Int(1), Cell::Text(""), Cell::Text("")],
-                vec![
-                    Cell::Int(2),
-                    Cell::Text("very long data"),
-                    Cell::Text("fold\nthis"),
-                ],
-            ],
-            vec!["hdr", "data", "fold"],
-        );
+        let result = multiline_empty_cells(Style::FancyGithub).tabulate();
         let expected = vec![
             "│   hdr │ data           │ fold   │",
             "├───────┼────────────────┼────────┤",
@@ -1411,25 +1080,12 @@ mod tests {
             "│       │                │ this   │",
         ]
         .join("\n");
-        let result = tabulate(
-            Style::FancyGithub,
-            tested_input.contents,
-            tested_input.headers,
-        );
         assert_eq!(expected, result);
     }
 
     #[test]
     fn fancygithub_grid_multiline_with_empty_cells_headerless() {
-        let tested_input = TestedInput::with_contents(vec![
-            vec![Cell::Int(0), Cell::Text(""), Cell::Text("")],
-            vec![Cell::Int(1), Cell::Text(""), Cell::Text("")],
-            vec![
-                Cell::Int(2),
-                Cell::Text("very long data"),
-                Cell::Text("fold\nthis"),
-            ],
-        ]);
+        let result = multiline_empty_cells_headerless(Style::FancyGithub).tabulate();
         let expected = vec![
             "│ 0 │                │      │",
             "│ 1 │                │      │",
@@ -1437,17 +1093,12 @@ mod tests {
             "│   │                │ this │",
         ]
         .join("\n");
-        let result = tabulate(
-            Style::FancyGithub,
-            tested_input.contents,
-            tested_input.headers,
-        );
         assert_eq!(expected, result);
     }
 
     #[test]
     fn fancypresto_grid() {
-        let tested_input = TestedInput::default();
+        let result = table(Style::FancyPresto).tabulate();
         let expected = vec![
             "strings   │   numbers",
             "──────────┼──────────",
@@ -1455,28 +1106,19 @@ mod tests {
             "eggs      │  451",
         ]
         .join("\n");
-        let result = tabulate(
-            Style::FancyPresto,
-            tested_input.contents,
-            tested_input.headers,
-        );
         assert_eq!(expected, result);
     }
 
     #[test]
     fn fancypresto_grid_headerless() {
-        let tested_input = TestedInput::default();
+        let result = headerless(Style::FancyPresto).tabulate();
         let expected = vec!["spam │  41.9999", "eggs │ 451"].join("\n");
-        let result = tabulate(Style::FancyPresto, tested_input.contents, vec![]);
         assert_eq!(expected, result);
     }
 
     #[test]
     fn fancypresto_grid_multiline_headerless() {
-        let tested_input = TestedInput::with_contents(vec![
-            vec![Cell::Text("foo bar\nbaz\nbau"), Cell::Text("hello")],
-            vec![Cell::Text(""), Cell::Text("multiline\nworld")],
-        ]);
+        let result = multiline_headerless(Style::FancyPresto).tabulate();
         let expected = vec![
             "foo bar │   hello",
             "  baz   │",
@@ -1485,22 +1127,12 @@ mod tests {
             "        │   world",
         ]
         .join("\n");
-        let result = tabulate_with_align(
-            Style::FancyPresto,
-            tested_input.contents,
-            tested_input.headers,
-            Align::Center,
-            Align::Right,
-        );
         assert_eq!(expected, result);
     }
 
     #[test]
     fn fancypresto_grid_multiline() {
-        let tested_input = TestedInput::new(
-            vec![vec![Cell::Int(2), Cell::Text("foo\nbar")]],
-            vec!["more\nspam eggs", "more spam\n& eggs"],
-        );
+        let result = multiline(Style::FancyPresto).tabulate();
         let expected = vec![
             "       more │ more spam",
             "  spam eggs │ & eggs",
@@ -1509,27 +1141,12 @@ mod tests {
             "            │ bar",
         ]
         .join("\n");
-        let result = tabulate(
-            Style::FancyPresto,
-            tested_input.contents,
-            tested_input.headers,
-        );
         assert_eq!(expected, result);
     }
 
     #[test]
     fn fancypresto_grid_multiline_with_empty_cells() {
-        let tested_input = TestedInput::new(
-            vec![
-                vec![Cell::Int(1), Cell::Text(""), Cell::Text("")],
-                vec![
-                    Cell::Int(2),
-                    Cell::Text("very long data"),
-                    Cell::Text("fold\nthis"),
-                ],
-            ],
-            vec!["hdr", "data", "fold"],
-        );
+        let result = multiline_empty_cells(Style::FancyPresto).tabulate();
         let expected = vec![
             "  hdr │ data           │ fold",
             "──────┼────────────────┼───────",
@@ -1538,25 +1155,12 @@ mod tests {
             "      │                │ this",
         ]
         .join("\n");
-        let result = tabulate(
-            Style::FancyPresto,
-            tested_input.contents,
-            tested_input.headers,
-        );
         assert_eq!(expected, result);
     }
 
     #[test]
     fn fancypresto_grid_multiline_with_empty_cells_headerless() {
-        let tested_input = TestedInput::with_contents(vec![
-            vec![Cell::Int(0), Cell::Text(""), Cell::Text("")],
-            vec![Cell::Int(1), Cell::Text(""), Cell::Text("")],
-            vec![
-                Cell::Int(2),
-                Cell::Text("very long data"),
-                Cell::Text("fold\nthis"),
-            ],
-        ]);
+        let result = multiline_empty_cells_headerless(Style::FancyPresto).tabulate();
         let expected = vec![
             "0 │                │",
             "1 │                │",
@@ -1564,11 +1168,6 @@ mod tests {
             "  │                │ this",
         ]
         .join("\n");
-        let result = tabulate(
-            Style::FancyPresto,
-            tested_input.contents,
-            tested_input.headers,
-        );
         assert_eq!(expected, result);
     }
 }
