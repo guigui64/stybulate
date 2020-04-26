@@ -191,6 +191,15 @@ impl Line {
             end: String::from(end),
         }
     }
+
+    #[cfg(feature = "ansi_term_style")]
+    /// Apply style to line
+    pub fn apply_style(&mut self, style: ansi_term::Style) {
+        self.begin = paint(&self.begin, style);
+        self.hline = paint(&self.hline, style);
+        self.sep = paint(&self.sep, style);
+        self.end = paint(&self.end, style);
+    }
 }
 
 #[derive(Clone)]
@@ -207,6 +216,19 @@ impl DataRow {
             end: String::from(end),
         }
     }
+
+    #[cfg(feature = "ansi_term_style")]
+    /// Apply style to datarow
+    pub fn apply_style(&mut self, style: ansi_term::Style) {
+        self.begin = paint(&self.begin, style);
+        self.sep = paint(&self.sep, style);
+        self.end = paint(&self.end, style);
+    }
+}
+
+#[cfg(feature = "ansi_term_style")]
+fn paint(s: &str, style: ansi_term::Style) -> String {
+    style.paint(s).to_string()
 }
 
 // A table is structured like so:
@@ -230,4 +252,25 @@ pub struct TableFormat {
     pub padding: u32,
     pub hidelineaboveifheader: bool,
     pub hidelinebelowifheader: bool,
+}
+
+#[cfg(feature = "ansi_term_style")]
+impl TableFormat {
+    /// Apply the style to all the Strings in the TableFormat
+    pub fn apply_style(&mut self, style: ansi_term::Style) {
+        if let Some(la) = self.lineabove.as_mut() {
+            la.apply_style(style);
+        }
+        if let Some(lbh) = self.linebelowheader.as_mut() {
+            lbh.apply_style(style);
+        }
+        if let Some(lbr) = self.linebetweenrows.as_mut() {
+            lbr.apply_style(style);
+        }
+        if let Some(lb) = self.linebelow.as_mut() {
+            lb.apply_style(style);
+        }
+        self.headerrow.apply_style(style);
+        self.datarow.apply_style(style);
+    }
 }

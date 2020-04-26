@@ -1,16 +1,16 @@
 use crate::unstyle::Unstyle;
 
 /// The content of each cell of the table (either a string or a number)
-pub enum Cell {
+pub enum Cell<'a> {
     /// Integer variant
     Int(i32),
     /// Float variant
     Float(f64),
     /// _Unstylable_ Text variant
-    Text(Box<dyn Unstyle>),
+    Text(Box<dyn Unstyle + 'a>),
 }
 
-impl Cell {
+impl<'a> Cell<'a> {
     /// Creates a Text Cell from a simple &str
     ///
     /// # Warning
@@ -31,7 +31,7 @@ impl Cell {
 
     /// Returns the unstylable content if it is a Text Variant, None otherwise
     #[allow(clippy::borrowed_box)]
-    pub fn to_unstylable(&self) -> Option<&Box<dyn Unstyle>> {
+    pub fn to_unstylable(&self) -> Option<&Box<dyn Unstyle + 'a>> {
         match self {
             Self::Text(s) => Some(s),
             _ => None,

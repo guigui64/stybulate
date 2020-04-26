@@ -14,8 +14,7 @@
 //!         vec![Cell::from("pi"), Cell::Float(3.1415)],
 //!     ],
 //!     Some(Headers::from(vec!["strings", "numbers"])),
-//! )
-//! .tabulate();
+//! ).tabulate();
 //! let expected = vec![
 //!     "╒═══════════╤═══════════╕",
 //!     "│ strings   │   numbers │",
@@ -123,21 +122,26 @@ impl Headers {
 /// );
 /// table.set_align(Align::Center, Align::Right);
 /// ```
-pub struct Table {
+pub struct Table<'a> {
     style: Style,
     str_align: Align,
     num_align: Align,
-    contents: Vec<Vec<Cell>>,
+    contents: Vec<Vec<Cell<'a>>>,
     headers: Option<Headers>,
+
+    #[cfg(feature = "ansi_term_style")]
+    border_style: Option<ansi_term::Style>,
 }
 
-impl Table {
+impl<'a> Table<'a> {
     /// Table constructor with default alignments (`Align::Left` for strings and `Align::Decimal` for numbers)
-    pub fn new(style: Style, contents: Vec<Vec<Cell>>, headers: Option<Headers>) -> Self {
+    pub fn new(style: Style, contents: Vec<Vec<Cell<'a>>>, headers: Option<Headers>) -> Self {
         Self {
             style,
             str_align: Align::Left,
             num_align: Align::Decimal,
+            #[cfg(feature = "ansi_term_style")]
+            border_style: None,
             contents,
             headers,
         }
@@ -154,6 +158,14 @@ impl Table {
         self.num_align = num_align;
     }
 
+    #[cfg(feature = "ansi_term_style")]
+    /// Set the borders style
+    /// # Feature
+    /// Needs feature `ansi_term_style`.
+    pub fn set_border_style(&mut self, style: ansi_term::Style) {
+        self.border_style = Some(style);
+    }
+
     /// Creates the table as a `String`
     pub fn tabulate(&self) -> String {
         let style = &self.style;
@@ -161,7 +173,13 @@ impl Table {
         let contents = &self.contents;
         let str_align = &self.str_align;
         let num_align = &self.num_align;
-        let fmt = style.to_format();
+        let mut fmt = style.to_format();
+        #[cfg(feature = "ansi_term_style")]
+        {
+            if let Some(style) = self.border_style {
+                fmt.apply_style(style);
+            }
+        }
         // number of columns
         let header_len = if let Some(h) = headers { h.len() } else { 0 };
         let col_nb = cmp::max(
@@ -244,10 +262,10 @@ impl Table {
 
 // --------------------------- Private ---------------------------
 
-fn get_col_width(
+fn get_col_width<'a>(
     col_nb: usize,
     headers: &Option<Headers>,
-    contents: &[Vec<Cell>],
+    contents: &[Vec<Cell<'a>>],
     col_spec: &[(bool, usize)],
     num_align: &Align,
 ) -> Vec<usize> {
@@ -287,7 +305,7 @@ fn get_col_width(
     col_width
 }
 
-fn get_col_specs(col_nb: usize, contents: &[Vec<Cell>]) -> Vec<(bool, usize)> {
+fn get_col_specs<'a>(col_nb: usize, contents: &[Vec<Cell<'a>>]) -> Vec<(bool, usize)> {
     let mut col_spec = vec![(false, 0); col_nb];
     for (col, spec) in col_spec.iter_mut().enumerate().take(col_nb) {
         let mut max = 0;
@@ -333,8 +351,8 @@ fn create_data_line(row: &style::DataRow, col_nb: usize, content: &[String]) -> 
 }
 
 #[allow(clippy::borrowed_box)]
-fn format_unstylable(
-    word: &Box<dyn Unstyle>,
+fn format_unstylable<'a>(
+    word: &Box<dyn Unstyle + 'a>,
     line_idx: usize,
     align: &Align,
     width: usize,
@@ -371,8 +389,8 @@ fn format_unstylable(
 }
 
 #[allow(clippy::borrowed_box)]
-fn create_data_lines(
-    content: &[&Box<dyn Unstyle>],
+fn create_data_lines<'a>(
+    content: &[&Box<dyn Unstyle + 'a>],
     str_align: &Align,
     num_align: &Align,
     col_width: &[usize],
@@ -407,7 +425,7 @@ mod tests {
 
     use super::*;
 
-    fn headerless(style: Style) -> Table {
+    fn headerless(style: Style) -> Table<'static> {
         Table::new(
             style,
             vec![
@@ -418,7 +436,7 @@ mod tests {
         )
     }
 
-    fn table(style: Style) -> Table {
+    fn table(style: Style) -> Table<'static> {
         Table::new(
             style.clone(),
             headerless(style).contents,
@@ -426,7 +444,7 @@ mod tests {
         )
     }
 
-    fn multiline_headerless(style: Style) -> Table {
+    fn multiline_headerless(style: Style) -> Table<'static> {
         let mut table = Table::new(
             style,
             vec![
@@ -439,7 +457,7 @@ mod tests {
         table
     }
 
-    fn multiline(style: Style) -> Table {
+    fn multiline(style: Style) -> Table<'static> {
         Table::new(
             style,
             vec![vec![Cell::Int(2), Cell::from("foo\nbar")]],
@@ -447,7 +465,7 @@ mod tests {
         )
     }
 
-    fn multiline_empty_cells(style: Style) -> Table {
+    fn multiline_empty_cells(style: Style) -> Table<'static> {
         Table::new(
             style.clone(),
             vec![
@@ -462,7 +480,7 @@ mod tests {
         )
     }
 
-    fn multiline_empty_cells_headerless(style: Style) -> Table {
+    fn multiline_empty_cells_headerless(style: Style) -> Table<'static> {
         Table::new(
             style,
             vec![
@@ -1168,6 +1186,55 @@ mod tests {
             "  │                │ this",
         ]
         .join("\n");
+        assert_eq!(expected, result);
+    }
+
+    #[cfg(feature = "ansi_term_style")]
+    #[test]
+    fn ansi_term_colored_content<'a>() {
+        use ansi_term::Colour::Red;
+        use ansi_term::{ANSIString, ANSIStrings};
+
+        let some_value = format!("{:b}", 42);
+        let strings: &[ANSIString<'a>] =
+            &[Red.paint("["), Red.bold().paint(some_value), Red.paint("]")];
+
+        let result = Table::new(
+            Style::Grid,
+            vec![vec![
+                Cell::Int(42),
+                Cell::Text(Box::new(ANSIStrings(&strings))),
+            ]],
+            Some(Headers::from(vec!["Int", "Colored binary"])),
+        )
+        .tabulate();
+
+        let expected = vec![
+            "+-------+------------------+",
+            "|   Int | Colored binary   |",
+            "+=======+==================+",
+            "|    42 | \u{1b}[31m[\u{1b}[1m101010\u{1b}[0m\u{1b}[31m]\u{1b}[0m         |",
+            "+-------+------------------+",
+        ]
+        .join("\n");
+        assert_eq!(expected, result);
+    }
+
+    #[cfg(feature = "ansi_term_style")]
+    #[test]
+    fn ansi_styled_borders() {
+        let mut table = table(Style::Fancy);
+        table.set_border_style(ansi_term::Color::Green.bold());
+        let result = table.tabulate();
+        let expected = vec![
+            "\u{1b}[1;32m╒═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═╤═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═╕\u{1b}[0m",
+            "\u{1b}[1;32m│ \u{1b}[0mstrings  \u{1b}[1;32m │ \u{1b}[0m  numbers\u{1b}[1;32m │\u{1b}[0m",
+            "\u{1b}[1;32m╞═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═╪═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═╡\u{1b}[0m",
+            "\u{1b}[1;32m│ \u{1b}[0mspam     \u{1b}[1;32m │ \u{1b}[0m  41.9999\u{1b}[1;32m │\u{1b}[0m",
+            "\u{1b}[1;32m├─\u{1b}[0m\u{1b}[1;32m─\u{1b}[0m\u{1b}[1;32m─\u{1b}[0m\u{1b}[1;32m─\u{1b}[0m\u{1b}[1;32m─\u{1b}[0m\u{1b}[1;32m─\u{1b}[0m\u{1b}[1;32m─\u{1b}[0m\u{1b}[1;32m─\u{1b}[0m\u{1b}[1;32m─\u{1b}[0m\u{1b}[1;32m─\u{1b}[0m\u{1b}[1;32m─┼─\u{1b}[0m\u{1b}[1;32m─\u{1b}[0m\u{1b}[1;32m─\u{1b}[0m\u{1b}[1;32m─\u{1b}[0m\u{1b}[1;32m─\u{1b}[0m\u{1b}[1;32m─\u{1b}[0m\u{1b}[1;32m─\u{1b}[0m\u{1b}[1;32m─\u{1b}[0m\u{1b}[1;32m─\u{1b}[0m\u{1b}[1;32m─\u{1b}[0m\u{1b}[1;32m─┤\u{1b}[0m",
+            "\u{1b}[1;32m│ \u{1b}[0meggs     \u{1b}[1;32m │ \u{1b}[0m 451     \u{1b}[1;32m │\u{1b}[0m",
+            "\u{1b}[1;32m╘═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═╧═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═\u{1b}[0m\u{1b}[1;32m═╛\u{1b}[0m"
+        ].join("\n");
         assert_eq!(expected, result);
     }
 }

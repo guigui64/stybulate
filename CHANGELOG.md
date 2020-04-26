@@ -11,6 +11,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   given for `String`s
 * Use `AsciiEscapedString`s when embedding ASCII escape sequences in a str.
   Using a `String` won't work anymore.
+* New feature *ansi_term_style* (enable by default) for styled content
+  (`ansi_term::ANSIStrings`) and borders (`ansi_term::Style`)
+* `examples/` folder added with detailed examples
 
 ## [0.1.1] - 2020-04-20
 

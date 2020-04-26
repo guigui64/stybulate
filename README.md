@@ -20,8 +20,7 @@ let result = Table::new(
         vec![Cell::from("pi"), Cell::Float(3.1415)],
     ],
     Some(Headers::from(vec!["strings", "numbers"])),
-)
-.tabulate();
+).tabulate();
 let expected = vec![
     "╒═══════════╤═══════════╕",
     "│ strings   │   numbers │",
@@ -33,6 +32,8 @@ let expected = vec![
 ].join("\n");
 assert_eq!(expected, result);
 ```
+
+See [examples](examples/) for more detailed examples.
 
 ### Change log
 
