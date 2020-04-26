@@ -1170,4 +1170,28 @@ mod tests {
         .join("\n");
         assert_eq!(expected, result);
     }
+
+    #[cfg(feature = "with_ansi_term")]
+    #[test]
+    fn ansi_term_colored_content<'a>() {
+        use ansi_term::Colour::Red;
+        use ansi_term::{ANSIString, ANSIStrings};
+
+        let some_value = format!("{:b}", 42);
+        let strings: &[ANSIString<'a>] =
+            &[Red.paint("["), Red.bold().paint(some_value), Red.paint("]")];
+
+        let result = Table::new(
+            Style::Grid,
+            vec![vec![
+                Cell::Int(42),
+                Cell::Text(Box::new(ANSIStrings(&strings))),
+            ]],
+            Some(Headers::from(vec!["Int", "Colored binary"])),
+        )
+        .tabulate();
+
+        let expected = "";
+        assert_eq!(expected, result);
+    }
 }
