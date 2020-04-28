@@ -6,6 +6,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [next]
 
+## [1.0.0] - 2020-04-29
+
 * API Change: now a `Table` object needs to be created
 * An `Unstyle` trait can be implemented for the text content. Default impl is
   given for `String`s
@@ -26,6 +28,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 * First release
 
-[next]: https://github.com/guigui64/stybulate/compare/0.1.1...HEAD
+[next]: https://github.com/guigui64/stybulate/compare/1.0.0...HEAD
+[1.0.0]: https://github.com/guigui64/stybulate/compare/0.1.1...1.0.0
 [0.1.1]: https://github.com/guigui64/stybulate/compare/0.1.0...0.1.1
 [0.1.0]: https://github.com/guigui64/stybulate/releases/tag/0.1.0
