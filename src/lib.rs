@@ -173,6 +173,7 @@ impl<'a> Table<'a> {
         let contents = &self.contents;
         let str_align = &self.str_align;
         let num_align = &self.num_align;
+        #[allow(unused_mut)]
         let mut fmt = style.to_format();
         #[cfg(feature = "ansi_term_style")]
         {
