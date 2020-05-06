@@ -374,6 +374,12 @@ fn format_unstylable<'a>(
                 if let Some(dot) = out.rfind('.') {
                     if out[(dot + 1)..].bytes().all(|c| c == b'0') {
                         out.replace_range(dot.., &" ".repeat(out.len() - dot));
+                    } else {
+                        for i in (dot + 1..out.len()).rev() {
+                            if out.as_bytes()[i] == b'0' {
+                                out.replace_range(i..i + 1, &" ");
+                            }
+                        }
                     }
                 }
                 out
