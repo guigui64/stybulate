@@ -6,6 +6,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [next]
 
+## [1.1.0] - 2020-05-06
+
 * Add a CLI binary
 * Remove trailing zeros after dot in floating numbers
 
@@ -31,7 +33,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 * First release
 
-[next]: https://github.com/guigui64/stybulate/compare/1.0.0...HEAD
+[next]: https://github.com/guigui64/stybulate/compare/1.1.0...HEAD
+[1.1.0]: https://github.com/guigui64/stybulate/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/guigui64/stybulate/compare/0.1.1...1.0.0
 [0.1.1]: https://github.com/guigui64/stybulate/compare/0.1.0...0.1.1
 [0.1.0]: https://github.com/guigui64/stybulate/releases/tag/0.1.0

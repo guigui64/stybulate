@@ -7,6 +7,10 @@ current_version=${current_version//\"/}
 if [[ $# == 0 ]]; then
     echo "Current version is $current_version"
     echo "Use $0 NEW_VERSION to change it"
+    echo "Remainder: Semver 2.0.0 MAJOR.MINOR.PATCH
+    MAJOR version when you make incompatible API changes,
+    MINOR version when you add functionality in a backwards compatible manner, and
+    PATCH version when you make backwards compatible bug fixes."
     exit
 fi
 
