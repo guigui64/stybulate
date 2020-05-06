@@ -67,6 +67,21 @@ pub enum Style {
 }
 
 impl Style {
+    /// Get Style from &str
+    pub fn from(s: &str) -> Option<Self> {
+        match s {
+            "plain" => Some(Self::Plain),
+            "simple" => Some(Self::Simple),
+            "github" => Some(Self::Github),
+            "grid" => Some(Self::Grid),
+            "fancy" => Some(Self::Fancy),
+            "presto" => Some(Self::Presto),
+            "fancygithub" => Some(Self::FancyGithub),
+            "fancypresto" => Some(Self::FancyPresto),
+            _ => None,
+        }
+    }
+
     /// Returns the corresponding format
     pub fn to_format(&self) -> TableFormat {
         let basicrow = DataRow::new("", "  ", "");

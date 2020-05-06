@@ -1,6 +1,6 @@
 # Stybulate - Tabulate with Style!
 
-A Rust library to create ASCII tables with styled borders.
+A Rust library (and a CLI binary) to create ASCII tables with styled borders.
 Inspired by the PyPi package <https://pypi.org/project/tabulate/>.
 
 [![Build status](https://github.com/guigui64/stybulate/workflows/CI/badge.svg)](https://github.com/guigui64/stybulate/actions)
@@ -8,6 +8,14 @@ Inspired by the PyPi package <https://pypi.org/project/tabulate/>.
 [![Rust](https://img.shields.io/badge/rust-1.38.0%2B-blue.svg?maxAge=3600)](https://github.com/guigui64/stybulate)
 [![Docs.rs](https://docs.rs/stybulate/badge.svg)](https://docs.rs/stybulate)
 [![License](https://img.shields.io/crates/l/stybulate)](LICENSE-MIT)
+
+## Binary
+
+Install with `cargo install stybulate`.
+
+See `stybulate --help` for options and arguments.
+
+## Library
 
 ### Example
 

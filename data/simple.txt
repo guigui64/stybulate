@@ -1,0 +1,4 @@
+foo bar
+pi 3.14
+answer 42
+pres    1.100

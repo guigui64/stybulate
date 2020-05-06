@@ -6,6 +6,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [next]
 
+* Add a CLI binary
 * Remove trailing zeros after dot in floating numbers
 
 ## [1.0.0] - 2020-04-29

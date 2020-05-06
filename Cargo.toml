@@ -16,8 +16,15 @@ exclude = ["/.github/", "/scripts/"]
 [features]
 default = ["ansi_term_style"]
 ansi_term_style = ["ansi_term"]
+cli = ["anyhow", "structopt"]
 
 [dependencies]
-strip-ansi-escapes = "0.1.0"
-unicode-width = "0.1.7"
-ansi_term = { version = "0.12.1", optional = true }
+strip-ansi-escapes = "0.1"
+unicode-width = "0.1"
+ansi_term = { version = "0.12", optional = true }
+anyhow = { version = "1.0", optional = true }
+structopt = { version = "0.3", optional = true }
+
+[[bin]]
+name = "stybulate"
+required-features = ["cli"]
