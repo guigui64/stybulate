@@ -11,7 +11,7 @@ Inspired by the PyPi package <https://pypi.org/project/tabulate/>.
 
 ## Binary
 
-Install with `cargo install stybulate`.
+Install with `cargo install stybulate --features=cli`.
 
 See `stybulate --help` for options and arguments.
 
