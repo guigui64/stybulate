@@ -364,13 +364,13 @@ fn format_unstylable<'a>(
             .split('\n')
             .nth(line_idx)
             .expect("unstyled word can't have more \\n than styled one");
-        let width = width - (unstyled_word.len() - UnicodeWidthStr::width(&unstyled_word as &str));
+        let width_fudged = width - UnicodeWidthStr::width(&unstyled_word as &str) + 1;
         let formatted = match align {
-            Align::Right => format!("{:>width$}", unstyled_word, width = width),
-            Align::Left => format!("{:<width$}", unstyled_word, width = width),
-            Align::Center => format!("{:^width$}", unstyled_word, width = width),
+            Align::Right => format!("{:>width$}", "X", width = width_fudged).replace("X", unstyled_word),
+            Align::Left => format!("{:<width$}", "X", width = width_fudged).replace("X", unstyled_word),
+            Align::Center => format!("{:^width$}", "X", width = width_fudged).replace("X", unstyled_word),
             Align::Decimal => {
-                let mut out = format!("{:>width$}", unstyled_word, width = width);
+                let mut out = format!("{:>width$}", "X", width = width_fudged).replace("X", unstyled_word);
                 if let Some(dot) = out.rfind('.') {
                     if out[(dot + 1)..].bytes().all(|c| c == b'0') {
                         out.replace_range(dot.., &" ".repeat(out.len() - dot));
@@ -385,6 +385,7 @@ fn format_unstylable<'a>(
                 out
             }
         };
+        assert!(UnicodeWidthStr::width(&formatted as &str) == width);
         if unstyled_word != word {
             formatted.replace(&unstyled_word, &word)
         } else {
@@ -771,6 +772,26 @@ mod tests {
             "+---------------------------------------------------------+---------+",
             "| pi                                                      |  3.1415 |",
             "+---------------------------------------------------------+---------+",
+        ]
+        .join("\n");
+        assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn issue_14() {
+        let headers = Headers::from(vec!["Hello", "World"]);
+        let contents = vec![vec![
+            Cell::from("✔"),
+            Cell::from("foo"),
+        ]];
+
+        let result = Table::new(Style::Grid, contents, Some(headers)).tabulate();
+        let expected = vec![
+            "+---------+---------+",
+            "| Hello   | World   |",
+            "+=========+=========+",
+            "| ✔       | foo     |",
+            "+---------+---------+",
         ]
         .join("\n");
         assert_eq!(expected, result);
