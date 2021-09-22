@@ -364,7 +364,7 @@ fn format_unstylable<'a>(
             .split('\n')
             .nth(line_idx)
             .expect("unstyled word can't have more \\n than styled one");
-        let width = width - (UnicodeWidthStr::width(&unstyled_word as &str) - unstyled_word.chars().count());
+        let width = width - (UnicodeWidthStr::width(unstyled_word as &str) - unstyled_word.chars().count());
         let formatted = match align {
             Align::Right => format!("{:>width$}", unstyled_word, width = width),
             Align::Left => format!("{:<width$}", unstyled_word, width = width),
