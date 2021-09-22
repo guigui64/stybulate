@@ -23,10 +23,7 @@ impl<'a> Cell<'a> {
 
     /// Is it a number ?
     pub fn is_a_number(&self) -> bool {
-        match self {
-            Self::Int(_) | Self::Float(_) => true,
-            _ => false,
-        }
+        matches!(self, Self::Int(_) | Self::Float(_))
     }
 
     /// Returns the unstylable content if it is a Text Variant, None otherwise

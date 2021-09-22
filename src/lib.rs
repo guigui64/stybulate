@@ -104,7 +104,7 @@ impl Headers {
 
     #[allow(clippy::borrowed_box)]
     fn to_ref_vec(&self) -> Vec<&Box<dyn Unstyle>> {
-        self.headers.iter().map(|b| b).collect()
+        self.headers.iter().collect()
     }
 }
 
@@ -202,7 +202,7 @@ impl<'a> Table<'a> {
         if let Some(headers) = headers {
             // headerrow
             let headers: Vec<&Box<dyn Unstyle>> = headers.to_ref_vec();
-            for data in create_data_lines(&headers, &str_align, &num_align, &col_width, &col_spec) {
+            for data in create_data_lines(&headers, str_align, num_align, &col_width, &col_spec) {
                 lines.push(create_data_line(&fmt.headerrow, col_nb, &data));
             }
             // linebelowheader
@@ -242,8 +242,8 @@ impl<'a> Table<'a> {
             }
             for data in create_data_lines(
                 &unstylable_content,
-                &str_align,
-                &num_align,
+                str_align,
+                num_align,
                 &col_width,
                 &col_spec,
             ) {
@@ -278,7 +278,7 @@ fn get_col_width<'a>(
                 max = *h
                     .unstyle()
                     .split('\n')
-                    .map(|s| UnicodeWidthStr::width(&s as &str))
+                    .map(|s| UnicodeWidthStr::width(s as &str))
                     .max()
                     .get_or_insert(0)
                     + MIN_PADDING;
@@ -292,7 +292,7 @@ fn get_col_width<'a>(
                 } else if let Some(u) = c.to_unstylable() {
                     *u.unstyle()
                         .split('\n')
-                        .map(|s| UnicodeWidthStr::width(&s as &str))
+                        .map(|s| UnicodeWidthStr::width(s as &str))
                         .max()
                         .get_or_insert(0)
                 } else {
@@ -306,7 +306,7 @@ fn get_col_width<'a>(
     col_width
 }
 
-fn get_col_specs<'a>(col_nb: usize, contents: &[Vec<Cell<'a>>]) -> Vec<(bool, usize)> {
+fn get_col_specs(col_nb: usize, contents: &[Vec<Cell>]) -> Vec<(bool, usize)> {
     let mut col_spec = vec![(false, 0); col_nb];
     for (col, spec) in col_spec.iter_mut().enumerate().take(col_nb) {
         let mut max = 0;
@@ -364,7 +364,7 @@ fn format_unstylable<'a>(
             .split('\n')
             .nth(line_idx)
             .expect("unstyled word can't have more \\n than styled one");
-        let width = width - (unstyled_word.len() - UnicodeWidthStr::width(&unstyled_word as &str));
+        let width = width - (unstyled_word.len() - UnicodeWidthStr::width(unstyled_word as &str));
         let formatted = match align {
             Align::Right => format!("{:>width$}", unstyled_word, width = width),
             Align::Left => format!("{:<width$}", unstyled_word, width = width),
@@ -377,7 +377,7 @@ fn format_unstylable<'a>(
                     } else {
                         for i in (dot + 1..out.len()).rev() {
                             if out.as_bytes()[i] == b'0' {
-                                out.replace_range(i..i + 1, &" ");
+                                out.replace_range(i..i + 1, " ");
                             }
                         }
                     }
@@ -386,7 +386,7 @@ fn format_unstylable<'a>(
             }
         };
         if unstyled_word != word {
-            formatted.replace(&unstyled_word, &word)
+            formatted.replace(&unstyled_word, word)
         } else {
             formatted
         }
@@ -417,7 +417,7 @@ fn create_data_lines<'a>(
                     // strings only
                     &str_align
                 };
-                format_unstylable(text, i, &align, col_width[col])
+                format_unstylable(text, i, align, col_width[col])
             })
             .collect();
         lines.push(formatted);
