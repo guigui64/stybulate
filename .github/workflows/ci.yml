@@ -1,10 +1,11 @@
+name: CI
+
 on:
   push:
-    branches:
-      - master
   pull_request:
 
-name: CI
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   ci:
@@ -13,14 +14,10 @@ jobs:
       matrix:
         rust:
           - stable
-          - beta
           - nightly
-          - 1.38.0  # MSRV
+          - beta
 
     steps:
-      - uses: actions/checkout@v2
-        name: Checkout
-
       - uses: actions-rs/toolchain@v1
         name: Install toolchain
         with:
@@ -29,10 +26,14 @@ jobs:
           override: true
           components: rustfmt, clippy
 
+      - uses: actions/checkout@v2
+        name: Checkout
+
       - uses: actions-rs/cargo@v1
         name: Build
         with:
           command: build
+          args: --all-features
 
       - uses: actions-rs/cargo@v1
         name: Test
@@ -42,13 +43,14 @@ jobs:
 
       - uses: actions-rs/cargo@v1
         name: Check format
+        continue-on-error: true
+        if: matrix.rust == 'stable' || matrix.rust == 'nightly'
         with:
           command: fmt
           args: --all -- --check
 
       - uses: actions-rs/cargo@v1
         name: Clippy
-        if: matrix.rust == 'stable'
+        if: matrix.rust == 'stable' || matrix.rust == 'nightly'
         with:
           command: clippy
-          args: -- -D warnings
