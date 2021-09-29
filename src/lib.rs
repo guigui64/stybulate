@@ -364,7 +364,8 @@ fn format_unstylable<'a>(
             .split('\n')
             .nth(line_idx)
             .expect("unstyled word can't have more \\n than styled one");
-        let width = width - (UnicodeWidthStr::width(unstyled_word as &str) - unstyled_word.chars().count());
+        let width =
+            width - (UnicodeWidthStr::width(unstyled_word as &str) - unstyled_word.chars().count());
         let formatted = match align {
             Align::Right => format!("{:>width$}", unstyled_word, width = width),
             Align::Left => format!("{:<width$}", unstyled_word, width = width),
@@ -779,10 +780,7 @@ mod tests {
     #[test]
     fn issue_14() {
         let headers = Headers::from(vec!["Hello", "World"]);
-        let contents = vec![vec![
-            Cell::from("✔"),
-            Cell::from("foo"),
-        ]];
+        let contents = vec![vec![Cell::from("✔"), Cell::from("foo")]];
 
         let result = Table::new(Style::Grid, contents, Some(headers)).tabulate();
         let expected = vec![
