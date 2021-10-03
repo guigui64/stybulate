@@ -1,7 +1,5 @@
 # Stybulate - Tabulate with Style!
 
-> :warning: **Not maintained anymore**: I am looking for a new maintainer, please contact me!
-
 A Rust library (and a CLI binary) to create ASCII tables with styled borders.
 Inspired by the PyPi package <https://pypi.org/project/tabulate/>.
 

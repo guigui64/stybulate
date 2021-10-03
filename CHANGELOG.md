@@ -6,6 +6,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [next]
 
+## [1.1.2] - 2021-10-03
+
+* Fix width with certain unicode characters
+
 ## [1.1.1] - 2020-05-06
 
 * Fix README (install binary with *cli* feature)
@@ -37,7 +41,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 * First release
 
-[next]: https://github.com/guigui64/stybulate/compare/1.1.1...HEAD
+[next]: https://github.com/guigui64/stybulate/compare/1.1.2...HEAD
+[1.1.2]: https://github.com/guigui64/stybulate/compare/1.1.1...1.1.2
 [1.1.1]: https://github.com/guigui64/stybulate/compare/1.1.0...1.1.1
 [1.1.0]: https://github.com/guigui64/stybulate/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/guigui64/stybulate/compare/0.1.1...1.0.0

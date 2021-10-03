@@ -1,7 +1,7 @@
 [package]
 name = "stybulate"
-version = "1.1.1"
-authors = ["Guillaume Comte <guillaume.comte10@gmail.com>"]
+version = "1.1.2"
+authors = ["Guillaume Comte <guillaume.comte10@gmail.com>", "João Vitor S. Anjos <jvanjos@protonmail.com>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
