@@ -44,7 +44,7 @@ impl<'a> Cell<'a> {
         }
     }
 
-    /// Same as [`to_string`](to_string) but formatted with a precision
+    /// Same as [`to_string`](#method.to_string) but formatted with a precision
     pub fn to_string_with_precision(&self, digits: usize) -> Option<String> {
         match self {
             Self::Int(i) => Some(format!("{:.prec$}", *i as f64, prec = digits)),
